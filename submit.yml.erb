@@ -6,7 +6,6 @@ script:
   native:
     - "--gres=gpu:1"
     - "--constraint=l40s"
-    - "--constraint=l40s"
     - "--partition=gpu"
     - "--cpus-per-task=<%= num_cores %>"
     - "--mem=<%= num_memory %>G"
