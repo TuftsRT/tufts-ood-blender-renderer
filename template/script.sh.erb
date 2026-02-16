@@ -5,7 +5,10 @@
 # ================================
 OUTPUT_DIR="<%= context.outputdir %>"
 BLENDER_PROJECT="<%= context.projectfile %>"
+FRAMES_PER_TASK=3           # <-- each Blender instance renders this many frames
+START_FRAME_GLOBAL=124         # overall starting frame number
 
+set -euo pipefail
 
 module load modtree/deprecated
 module load blender/4.2.5
@@ -14,7 +17,7 @@ module load cuda/11.7
 hostname
 pwd
 
-echo "${SLURM_JOB_ID} ${SLURM_ARRAY_JOB_ID} ${SLURM_ARRAY_TASK_ID}"
+#echo "${SLURM_JOB_ID} ${SLURM_ARRAY_JOB_ID} ${SLURM_ARRAY_TASK_ID}"
 
 # Trim whitespace and check if OUTPUT_DIR is empty or unset
 if [ -z "$(echo "$OUTPUT_DIR" | xargs)" ]; then
@@ -31,23 +34,51 @@ fi
 
 nvidia-smi
 
+
+echo "Job ${SLURM_JOB_ID} starting on ${SLURM_JOB_NODELIST}"
+echo "Nodes: ${SLURM_JOB_NUM_NODES}, Tasks: ${SLURM_NTASKS}, GPUs/task: 1"
+echo "Blend: ${BLENDER_PROJECT}"
+echo "Output Dir:  ${OUTPUT_DIR}"
+
+
 #Create output directory 
 mkdir -p "$OUTPUT_DIR"
 
+
 #render all frames, skipping existing frames (-a)
 #https://docs.blender.org/manual/en/latest/advanced/command_line/arguments.html
-blender -b -P ./use_gpu.py -E CYCLES $BLENDER_PROJECT --render-output $OUTPUT_DIR/###### --render-format PNG -a
 
-#mark that we got through all the frames
-touch completed
+#blender -b -P ./use_gpu.py -E CYCLES $BLENDER_PROJECT --render-output $OUTPUT_DIR/###### --render-format PNG -a
 
-#Combine frames into video file
-#/cluster/tufts/apps/manual/9/x86_64/blender/4.5.4/blender-4.5.4-linux-x64/tools/ffmpeg-linux-amd64
+# One srun spanning both nodes. Each rank renders a different frame range.
+srun --export=ALL \
+     --ntasks=${SLURM_NTASKS} \
+     --ntasks-per-node=1 \
+     --cpus-per-task=${SLURM_CPUS_PER_TASK} \
+     --gpu-bind=single:1 \
+     /bin/bash -c '
+       set -euo pipefail
 
-module load ffmpeg
-ffmpeg -r 24 -i $OUTPUT_DIR/%06d.png  -c:v mpeg4  "$OUTPUT_DIR/video.mp4"
+       # Rank id 0..7
+       RANK=${SLURM_PROCID}
 
-#ffmpeg -r 24 -pattern_type glob -i $OUTPUT_DIR/*.png -c:v h264 -crf 20 -g 18 -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -pix_fmt yuv420p -r 24 -y -r 24 "$OUTPUT_DIR/video.mp4"
+       FRAMES_PER_TASK='"${FRAMES_PER_TASK}"'
+       START_FRAME_GLOBAL='"${START_FRAME_GLOBAL}"'
+
+       START=$(( START_FRAME_GLOBAL + RANK * FRAMES_PER_TASK ))
+       END=$(( START + FRAMES_PER_TASK - 1 ))
+
+       echo "Rank ${RANK} on $(hostname)"
+       echo "  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+       
+       blender -b "'"${BLENDER_PROJECT}"'" \
+               -P ./use_gpu.py \
+               -E CYCLES \
+               --render-output "'"${OUTPUT_DIR}/######"'" \
+               --render-format PNG\
+               -s "${START}" -e "${END}" -a
+     '
+
 
 
 echo "Exited.  End of job ${SLURM_JOB_ID}."
