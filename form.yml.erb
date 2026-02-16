@@ -2,6 +2,9 @@
 cluster: "pax"
 
 attributes:
+  bc_num_hours:
+    value: "2" 
+
   num_cores:
     widget: "select"
     label: "Cores"
@@ -10,7 +13,6 @@ attributes:
       - ["4", "4"]
       - ["8", "8"]
       - ["12", "12"]
-      - ["16", "16"]
     value: "8"
 
   num_memory:
@@ -20,10 +22,8 @@ attributes:
       - ["4GB", "4"]
       - ["8GB", "8"]
       - ["16GB", "16"]
-      - ["32GB", "32"]
-      - ["64GB", "64"]
-      - ["96GB", "96"]       
-    value: "32"
+      - ["32GB", "32"]    
+    value: "16"
 
   partition:
     widget: "select"
@@ -44,6 +44,19 @@ attributes:
       - ["L40S - 48GB", "l40s"]
     value: "l40s"
 
+  gpu_count:
+    widget: "select"
+    label: "GPU Count"
+    help: "Number of GPUs per node to use for this render job."
+    options:
+      - ["1", "1"]
+      - ["2", "2"]
+      - ["4", "4"]
+    value: "1"
+
+
+
+
   projectfile:
     label: Blender Project File
     widget: path_selector
@@ -62,12 +75,19 @@ attributes:
       - /cluster/tufts
       - /cluster/home
 
+  start_frame:
+    label: "Start at frame number"
+    help: "Enter the number of the frame to start at.  First frame is 1."
+    value: "1"
+
 form:
   - bc_num_hours
   - num_cores
   - num_memory
   - partition
   - gpu_type 
+  - gpu_count
+  - bc_num_slots
   - projectfile
   - outputdir
-  
+  - start_frame
