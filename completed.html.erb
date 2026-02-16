@@ -1,0 +1,26 @@
+<%
+    projectfile  = user_context["projectfile"] || ""
+    outputdir = user_context["outputdir"] || ""
+
+    if outputdir.size == 0 
+        outputdir = directory_path = File.dirname(projectfile) + "/output"
+    end
+
+%>
+
+<!--Check for the completed file, if present not all frames rendered-->
+<%if File.exist?( outputdir + '/completed' )%>
+<div class="alert alert-success mb-3">
+All frames rendered successfully!
+</div>
+<%end%>
+
+
+
+<%if not outputdir.size == 0 %>
+<div>
+Rendered output can be found at: <a href="<%= (ENV['OOD_FILES_URL'] + '/fs/' + outputdir) %>" target="_new" >
+<%=outputdir%>
+</a>
+</div>
+<%end%>

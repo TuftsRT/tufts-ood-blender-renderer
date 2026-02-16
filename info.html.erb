@@ -1,0 +1,92 @@
+<%if info.native && info.native[:state] == "RUNNING" %>
+<%
+work_dir = info.native[:work_dir]
+
+projectfile  = user_context["projectfile"] 
+outputdir = user_context["outputdir"] 
+
+if outputdir.size == 0 
+    outputdir = directory_path = File.dirname(projectfile) + "/output"
+end
+
+frames_skipped = `cat #{work_dir}/output.log | grep 'skipping existing frame' | wc -l`
+frames_rendered = `cat #{work_dir}/output.log | grep 'Saved:' | wc -l`
+last_frame_time = `cat #{work_dir}/output.log | grep "Time:.*(Saving"  | tail -n 1`
+log_tail = `tail -n 10 #{work_dir}/output.log`
+last_frame_file = `cat #{work_dir}/output.log | grep Saved | tail -n 1 | awk -F"'" '{print $2}'`
+last_frame_url = ENV['OOD_FILES_URL'] + '/fs/' + last_frame_file
+%>
+
+<div>
+    Blender is rendering your file.  This application has no user interface 
+    but progress will be shown in this view.
+</div>
+
+<div class="row" >
+
+<div class=" col-6">
+    <table>
+        <tr>
+        <th>Existing frames skipped</th>
+        <td>
+            <%=frames_skipped  %>
+        </td>
+        </tr>
+
+        <tr>
+        <th>Frames rendered</th>
+        <td>
+            <%=frames_rendered  %>
+        </td>
+        </tr>
+
+        <tr>
+        <th>Time to render last frame</th>
+        <td>
+            <% if not last_frame_time.size == 0 %>
+            <%=last_frame_time.split(" ")[1] %>
+            <% end %>
+        </td>
+        </tr>
+
+        <tr>
+        <th colspan="2" >Output Directory</th>
+        </tr>
+
+        <tr>
+        <td colspan="2" >
+            <a href="<%= (ENV['OOD_FILES_URL'] + '/fs/' + outputdir) %>" target="_new" >
+            <%=outputdir%>
+            </a>
+        </td>
+        </tr>
+
+    </table>
+</div>
+
+<div class=" col-6" >
+    <% if not last_frame_file.size == 0 %>
+        <img class="card" src="<%=last_frame_url %>" width="100%" style="min-height:240px; background-color:#868e96" >
+    <% else %>
+        <img class="card" width="100%" style="min-height:240px; background-color:#868e96" >
+    <% end %>
+</div>
+
+<div>
+<h6>Output log</h6>
+<pre>
+<%=log_tail  %>
+</pre>
+<a href="<%= (ENV['OOD_FILES_URL'] + '/fs/' + work_dir + '/output.log') %>" target="_ood_blender_log" >View full job log file</a>
+</div>
+
+</div>
+
+<% end %>
+<style>
+
+#id_<%=id%> .card-body p:nth-of-type(1){
+    display:none;
+}
+
+</style>

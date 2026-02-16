@@ -1,0 +1,6 @@
+---
+name: "Blender Renderer"
+category: "Interactive Apps"
+role: "batch_connect"
+description: |
+  Renders Blender Animation files in the background
