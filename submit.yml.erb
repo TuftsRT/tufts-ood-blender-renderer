@@ -7,7 +7,7 @@ script:
     - "--nodes=<%=bc_num_slots %>"
     - "--gres=gpu:<%=gpu_count %>"
     - "--ntasks=<%=bc_num_slots.to_i  * gpu_count.to_i  %>"
-    - "--constraint=l40s"
+    - "--constraint=<%=gpu_type%>"
     - "--partition=gpu"
     - "--mem=<%=num_memory %>G"
     - "--qos=expanded4x"

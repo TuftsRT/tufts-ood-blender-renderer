@@ -29,6 +29,7 @@ mkdir -p "$OUTPUT_DIR"
 
 #render all frames, skipping existing frames (-a)
 #https://docs.blender.org/manual/en/latest/advanced/command_line/arguments.html
+#     --output="slurm-%x_%j_%n_task%t.out" \
 
 # One srun spanning both nodes. Each rank renders a different frame range.
 srun --export=ALL \
@@ -56,6 +57,8 @@ srun --export=ALL \
                --render-format PNG\
                -s "${START}" -e "${END}" -a
      '
+
+touch completed
 
 echo "Exited.  End of job ${SLURM_JOB_ID}."
 echo "Output at: ${OUTPUT_DIR}"
