@@ -1,0 +1,47 @@
+
+#remove any failed renders
+find ${OUTPUT_DIR} -type f -name '*.png' -size 0 -delete
+
+#Count PNG files
+COUNT_FRAME_FILES=$(find ${OUTPUT_DIR} -type f -name '*.png' | wc -l)
+
+#COUNT RENDERED THIS Job
+RENDERED_THIS_JOB=$(cat ./output.log | grep "Saved" | wc -l)
+
+#Calc peak Memory
+PEAK_MEMORY=$(cat ./output.log | grep "Peak" | awk -F" " '{print $4}' | sort -n | tail -n 1 | tr -d ')')
+
+#Calc average frame render time
+AVG_RENDER_TIME=$(cat ./output.log | grep "Time:.*(Saving" | awk -F" " '{print $2}' | awk -F'[:.]' '{sum += ($1*60)+$2+($3/100); count++} END {if (count > 0) {avg=sum/count; printf "%02d:%05.2f\n", avg/60, avg%60} else print "00:00.00"}')
+
+if [[ "$COUNT_FRAME_FILES" == "$TOTAL_FRAMES" ]]; then
+    touch completed
+fi
+
+jq -n \
+  --arg SLURM_JOB_NUM_NODES "$SLURM_JOB_NUM_NODES" \
+  --arg BLENDER_PROJECT "$BLENDER_PROJECT" \
+  --arg OUTPUT_DIR "$OUTPUT_DIR" \
+  --arg START_FRAME_GLOBAL "$START_FRAME_GLOBAL" \
+  --arg TOTAL_FRAMES "$TOTAL_FRAMES" \
+  --arg FRAMES_PER_TASK "$FRAMES_PER_TASK" \
+  --arg COUNT_FRAME_FILES "$COUNT_FRAME_FILES" \
+  --arg RENDERED_THIS_JOB "$RENDERED_THIS_JOB" \
+  --arg PEAK_MEMORY "$PEAK_MEMORY" \
+  --arg AVG_RENDER_TIME "$AVG_RENDER_TIME" \
+  '{
+    SLURM_JOB_NUM_NODES: $SLURM_JOB_NUM_NODES,
+    BLENDER_PROJECT: $BLENDER_PROJECT,
+    OUTPUT_DIR: $OUTPUT_DIR,
+    START_FRAME_GLOBAL: $START_FRAME_GLOBAL,
+    TOTAL_FRAMES: $TOTAL_FRAMES,
+    FRAMES_PER_TASK: $FRAMES_PER_TASK,
+    COUNT_FRAME_FILES: $COUNT_FRAME_FILES,
+    RENDERED_THIS_JOB: $RENDERED_THIS_JOB,
+    PEAK_MEMORY: $PEAK_MEMORY,
+    AVG_RENDER_TIME: $AVG_RENDER_TIME
+  }' > result.json
+
+
+echo "Removing lock file."
+rm ${OUTPUT_DIR}/.lock

@@ -15,7 +15,20 @@ last_frame_time = `cat #{work_dir}/output.log | grep "Time:.*(Saving"  | tail -n
 log_tail = `tail -n 10 #{work_dir}/output.log`
 last_frame_file = `cat #{work_dir}/output.log | grep Saved | tail -n 1 | awk -F"'" '{print $2}'`
 last_frame_url = ENV['OOD_FILES_URL'] + '/fs/' + last_frame_file
+
+peak_mem = `cat #{work_dir}/output.log | grep Peak | awk -F" " '{print $4}' | sort -n | tail -n 1 | tr -d ')'`
+killed_count = `cat #{work_dir}/*.err | grep "Killed"  | wc -l`
+
 %>
+
+<% if killed_count.to_i > 0  %>
+<div class="alert alert-danger " role="alert" >
+    <%=killed_count.to_i%> "Killed" message(s) detected in the output.log.  One or more workers most likely killed for Out of Memory.
+    <a href="<%= (ENV['OOD_FILES_URL'] + '/fs/' + work_dir + '/output.err') %>" target="_ood_blender_log" >View full error log.</a>
+
+</div>
+
+<%end%>
 
 <div>
     Blender is rendering your file.  This application has no user interface 
@@ -39,6 +52,14 @@ last_frame_url = ENV['OOD_FILES_URL'] + '/fs/' + last_frame_file
             <%=frames_rendered  %>
         </td>
         </tr>
+
+        <tr>
+        <th>Peak memory per frame</th>
+        <td>
+            <%=peak_mem  %>
+        </td>
+        </tr>
+
 
         <tr>
         <th>Time to render last frame</th>

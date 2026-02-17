@@ -1,0 +1,44 @@
+module load modtree/deprecated
+module load blender/4.2.5
+module load cuda/11.7
+
+export OUTPUT_DIR="<%= context.outputdir %>"
+export BLENDER_PROJECT="<%= context.projectfile %>"
+
+TOTAL_FRAMES=$( blender -b $BLENDER_PROJECT -P ./count_frames.py | grep 'TotalFrames'  | awk -F":" '{print $2}' )
+export TOTAL_FRAMES
+
+<%
+    TASK_COUNT = (context.bc_num_slots.to_i  * context.gpu_count.to_i)  
+%>
+
+export START_FRAME_GLOBAL="<%= context.start_frame %>"         # overall starting frame number
+
+<% if context.end_frame.to_i > 0  %>
+export FRAMES_PER_TASK=$((( ( <%=context.end_frame.to_i%> - $START_FRAME_GLOBAL) / <%=TASK_COUNT %>)+1))      # <-- each Blender instance renders this many frames
+<% else %>
+export FRAMES_PER_TASK=$((( ($TOTAL_FRAMES - $START_FRAME_GLOBAL) / <%=TASK_COUNT %>)+1))      # <-- each Blender instance renders this many frames
+<%end%>
+
+# Trim whitespace and check if OUTPUT_DIR is empty or unset
+if [ -z "$(echo "$OUTPUT_DIR" | xargs)" ]; then
+    BLENDER_PROJECT_DIR_PATH=$(dirname "$BLENDER_PROJECT")
+    export OUTPUT_DIR="$BLENDER_PROJECT_DIR_PATH/output"
+fi
+
+echo "Checking for existing lock"
+
+if [ -e "${OUTPUT_DIR}/.lock" ]; then
+  echo "Error: ${OUTPUT_DIR}/.lock exists, exiting.  It is only safe to run 1 copy of this per output folder at a time."
+  exit 1
+fi
+
+echo "Locking" > ${OUTPUT_DIR}/.lock
+
+
+echo "Looking for empty render files to clean up."
+
+find ${OUTPUT_DIR} -type f -name '*.png' -size 0
+find ${OUTPUT_DIR} -type f -name '*.png' -size 0 -delete
+
+echo "Done Cleaning."

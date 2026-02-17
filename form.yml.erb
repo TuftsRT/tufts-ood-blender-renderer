@@ -1,7 +1,24 @@
+<%
+  
+  if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender' ]).any?
+    gpu_options = [1, 2, 4]
+    max_slots = 6
+    mem_options = [2,4,8,16,32,64,128]
+  else
+    gpu_options = [1, 2]
+    max_slots = 1
+    mem_options =  [2,4,8,16,32]
+  end
+
+%>
+
 ---
 cluster: "pax"
 
 attributes:
+  bc_num_hours:
+    value: "2" 
+
   num_cores:
     widget: "select"
     label: "Cores"
@@ -10,39 +27,51 @@ attributes:
       - ["4", "4"]
       - ["8", "8"]
       - ["12", "12"]
-      - ["16", "16"]
     value: "8"
 
   num_memory:
     widget: "select"
-    label: "Memory"
+    label: "Memory (GB)"
     options:
-      - ["4GB", "4"]
-      - ["8GB", "8"]
-      - ["16GB", "16"]
-      - ["32GB", "32"]
-      - ["64GB", "64"]
-      - ["96GB", "96"]       
-    value: "32"
+<% mem_options.each do |n| %>
+    - ["<%= n %>", "<%= n %>"]
+<% end %>  
+    value: "16"
 
   partition:
     widget: "select"
     label: "Partition"
     help: "NOTE: jobs submitted to the preempt partition may get automatically killed to allow higher priority jobs to run"
     options:
-      - ["preempt"]
       - ["gpu"]
+      - ["preempt"]
     value: "gpu"
 
   gpu_type:
     widget: "select"
     label: "GPU type"
-    help: "gpu partition has a100, a100-80GB and p100, preempt partition has all listed gpu types."
+    help: "Not all GPU types are available in all partitions."
     options:
       - ["A100 - 40GB", "a100"]
       - ["A100 - 80GB", "a100-80GB"]
       - ["L40S - 48GB", "l40s"]
     value: "l40s"
+
+  gpu_count:
+    widget: "select"
+    label: "GPU Count"
+    help: "Number of GPUs per node to use for this render job."
+    options:
+<% gpu_options.each do |n| %>
+    - ["<%= n %>", "<%= n %>"]
+<% end %>
+    value: "1"
+
+  bc_num_slots:
+    min: 1
+    max: <%=max_slots %>
+
+
 
   projectfile:
     label: Blender Project File
@@ -62,12 +91,26 @@ attributes:
       - /cluster/tufts
       - /cluster/home
 
+  start_frame:
+    label: "Start at frame number"
+    help: "Enter the number of the frame to start at.  First frame is 1."
+    value: "1"
+    min: 1
+
+  end_frame:
+    label: "End at frame number"
+    help: "Enter the number of the frame to end at.  Level blank to render to the last frame."
+    value: ""
+
 form:
   - bc_num_hours
   - num_cores
   - num_memory
   - partition
   - gpu_type 
+  - gpu_count
+  - bc_num_slots
   - projectfile
   - outputdir
-  
+  - start_frame
+  - end_frame
