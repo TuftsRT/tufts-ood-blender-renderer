@@ -10,8 +10,10 @@ script:
     - "--constraint=<%=gpu_type %>"
     - "--partition=<%=partition %>"
     - "--mem=<%=num_memory %>G"
-    - "--qos=expanded4x"
     - "--cpus-per-task=<%=num_cores %>"
     - "--gpus-per-task=1"
     - "--time=0<%=bc_num_hours %>:00:00"
     - "--error=output.err"
+<% if ta_qos %>
+    - "--qos=<%=ta_qos %>"
+<% end %>
