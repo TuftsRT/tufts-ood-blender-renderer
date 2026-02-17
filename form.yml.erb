@@ -10,6 +10,10 @@
     mem_options =  [2,4,8,16,32]
   end
 
+
+  qos_options = (`sacctmgr show assoc where user=#{ENV['USER']} format=qos%1000 --noheader --parsable2 `).split(",")
+  qos_default = "normal"
+
 %>
 
 ---
@@ -46,6 +50,15 @@ attributes:
       - ["gpu"]
       - ["preempt"]
     value: "gpu"
+
+  ta_qos:
+    widget: "select"
+    label: "Slurm QOS"
+    options:
+<% qos_options.each do |n| %>
+    - ["<%= n %>", "<%= n %>"]
+<% end %>  
+    value: "<%=qos_default %>"
 
   gpu_type:
     widget: "select"
@@ -107,6 +120,9 @@ form:
   - num_cores
   - num_memory
   - partition
+<%if qos_options.size > 1 %>
+  - ta_qos
+<%end%>
   - gpu_type 
   - gpu_count
   - bc_num_slots
