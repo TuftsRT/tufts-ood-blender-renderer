@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+#set -euo pipefail
 
 module load modtree/deprecated
 module load blender/4.2.5
@@ -37,7 +37,7 @@ srun --export=ALL \
      --cpus-per-task=${SLURM_CPUS_PER_TASK} \
      --gpu-bind=single:1 \
      /bin/bash -c '
-       set -euo pipefail
+       #set -euo pipefail
 
        # Rank id 0..7
        RANK=${SLURM_PROCID}
@@ -58,7 +58,6 @@ srun --export=ALL \
                -s "${START}" -e "${END}" -a
      '
 
-touch completed
 
 echo "Exited.  End of job ${SLURM_JOB_ID}."
 echo "Output at: ${OUTPUT_DIR}"
