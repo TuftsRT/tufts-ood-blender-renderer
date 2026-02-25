@@ -1,0 +1,44 @@
+name: Release
+on: workflow_dispatch
+jobs:
+  build:
+    permissions: write-all
+    runs-on: [self-hosted, rocky-9]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Read version from VERSION file
+      id: get_version
+      run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
+    - name: 'Tar files'
+      run: cd .. && tar -cvzf tufts-ood-blender-renderer-${{ steps.get_version.outputs.version }}.tar.gz --exclude='.github' --exclude='.git' tufts-ood-blender-renderer
+
+    - name: Move tarball to working directory
+      run: mv ../tufts-ood-blender-renderer-${{ steps.get_version.outputs.version }}.tar.gz .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: error
+        path: tufts-ood-blender-renderer-${{ steps.get_version.outputs.version }}.tar.gz
+        name: tufts-ood-blender-renderer-${{ steps.get_version.outputs.version }}.tar.gz
+
+    - name: Copy file to repo-p01
+      run: scp tufts-ood-blender-renderer-${{ steps.get_version.outputs.version }}.tar.gz github@repo-p01:/var/www/repos/ondemand/9/apps/
+
+    - name: Create tag from VERSION file
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag ${{ steps.get_version.outputs.version }}
+        git push origin ${{ steps.get_version.outputs.version }}
+
+    - name: Create a GitHub release
+      uses: ncipollo/release-action@v1
+      with:
+        tag: ${{ steps.get_version.outputs.version }}
+        name: Release ${{ steps.get_version.outputs.version }}
+        body: Release ${{ steps.get_version.outputs.version }}
+        artifacts: ./tufts-ood-blender-renderer-${{ steps.get_version.outputs.version }}.tar.gz
