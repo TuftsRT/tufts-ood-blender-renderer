@@ -1,6 +1,8 @@
 <%
-  
-  if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender' ]).any?
+  # Site-configurable settings loaded from /etc/ood/config/apps/dashboard/env
+  _privileged_groups = ENV.fetch("TUFTS_OBR_PRIVILEGED_GROUPS", "hpctools,blender").split(",").map(&:strip)
+
+  if (OodSupport::User.new.groups.map(&:name) & _privileged_groups).any?
     gpu_options = [1, 2, 4]
     max_slots = 6
     mem_options = [2,4,8,16,32,64,128]
@@ -87,7 +89,7 @@ attributes:
 
 
   projectfile:
-    label: Blender Project File
+    label: Blender Project File 
     widget: path_selector
     directory: /cluster/tufts
     favorites:
