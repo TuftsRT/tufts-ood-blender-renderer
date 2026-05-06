@@ -3,15 +3,18 @@ batch_connect:
 
 script:
   job_name: "Blender_renderer"
+<%
+  selected_gpu_type = gpu_type.to_s
+  gpu_gres_name = selected_gpu_type.split('-', 2).first
+%>
   native:
     - "--nodes=<%=bc_num_slots %>"
-    - "--gres=gpu:<%=gpu_count %>"
-    - "--ntasks=<%=bc_num_slots.to_i  * gpu_count.to_i  %>"
-    - "--constraint=<%=gpu_type %>"
+    - "--gres=gpu:<%=gpu_gres_name %>:<%=num_gpus %>"
+    - "--ntasks=<%=bc_num_slots.to_i * num_gpus.to_i %>"
+    - "--constraint=<%=selected_gpu_type %>"
     - "--partition=<%=partition %>"
     - "--mem=<%=num_memory %>G"
     - "--cpus-per-task=<%=num_cores %>"
-    - "--gpus-per-task=1"
     - "--time=0<%=bc_num_hours %>:00:00"
     - "--error=output.err"
 <% if ta_qos %>

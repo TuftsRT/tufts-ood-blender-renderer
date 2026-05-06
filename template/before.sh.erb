@@ -9,7 +9,7 @@ TOTAL_FRAMES=$( blender -b $BLENDER_PROJECT -P ./count_frames.py | grep 'TotalFr
 export TOTAL_FRAMES
 
 <%
-    TASK_COUNT = (context.bc_num_slots.to_i  * context.gpu_count.to_i)  
+    TASK_COUNT = (context.bc_num_slots.to_i  * context.num_gpus.to_i)  
 %>
 
 export START_FRAME_GLOBAL="<%= context.start_frame %>"         # overall starting frame number

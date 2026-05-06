@@ -1,55 +1,30 @@
 <%
-  
-  if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender' ]).any?
-    gpu_options = [1, 2, 4]
-    max_slots = 6
-    mem_options = [2,4,8,16,32,64,128]
-  else
-    gpu_options = [1, 2]
-    max_slots = 1
-    mem_options =  [2,4,8,16,32]
-  end
+  @partition_filter = :gpu
 
+  _partial_path = File.expand_path('dynamic_form_files/resource_discovery.erb', __dir__)
+  _resource_result = ERB.new(File.read(_partial_path)).result(binding)
+
+  if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender']).any?
+    max_slots = 6
+  else
+    max_slots = 1
+  end
 
   qos_options = (`sacctmgr show assoc where user=#{ENV['USER']} format=qos%1000 --noheader --parsable2 `).split(",")
   qos_default = "normal"
-
 %>
 
 ---
 cluster: "pax"
+bc_dynamic_js: true
 
 attributes:
-  bc_num_hours:
-    value: "2" 
-
-  num_cores:
-    widget: "select"
-    label: "Cores"
-    options:
-      - ["2", "2"]
-      - ["4", "4"]
-      - ["8", "8"]
-      - ["12", "12"]
-    value: "8"
-
-  num_memory:
-    widget: "select"
-    label: "Memory (GB)"
-    options:
-<% mem_options.each do |n| %>
-    - ["<%= n %>", "<%= n %>"]
-<% end %>  
-    value: "16"
-
-  partition:
-    widget: "select"
-    label: "Partition"
-    help: "NOTE: jobs submitted to the preempt partition may get automatically killed to allow higher priority jobs to run"
-    options:
-      - ["gpu"]
-      - ["preempt"]
-    value: "gpu"
+<%= generate_partition_field.indent(2) %>
+<%= generate_gpu_type_field.indent(2) %>
+<%= generate_num_gpus_field.indent(2) %>
+<%= generate_num_cores_field.indent(2) %>
+<%= generate_num_memory_field.indent(2) %>
+<%= generate_num_hours_field.indent(2) %>
 
   ta_qos:
     widget: "select"
@@ -59,26 +34,6 @@ attributes:
     - ["<%= n %>", "<%= n %>"]
 <% end %>  
     value: "<%=qos_default %>"
-
-  gpu_type:
-    widget: "select"
-    label: "GPU type"
-    help: "Not all GPU types are available in all partitions."
-    options:
-      - ["A100 - 40GB", "a100"]
-      - ["A100 - 80GB", "a100-80GB"]
-      - ["L40S - 48GB", "l40s"]
-    value: "l40s"
-
-  gpu_count:
-    widget: "select"
-    label: "GPU Count"
-    help: "Number of GPUs per node to use for this render job."
-    options:
-<% gpu_options.each do |n| %>
-    - ["<%= n %>", "<%= n %>"]
-<% end %>
-    value: "1"
 
   bc_num_slots:
     min: 1
@@ -116,15 +71,15 @@ attributes:
     value: ""
 
 form:
-  - bc_num_hours
+  - partition
+  - gpu_type 
+  - num_gpus
   - num_cores
   - num_memory
-  - partition
+  - bc_num_hours
 <%if qos_options.size > 1 %>
   - ta_qos
 <%end%>
-  - gpu_type 
-  - gpu_count
   - bc_num_slots
   - projectfile
   - outputdir

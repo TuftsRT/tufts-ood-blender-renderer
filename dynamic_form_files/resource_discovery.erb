@@ -1,0 +1,656 @@
+<%
+require 'open3'
+require 'set'
+
+# Capture command output or return empty string on failure
+def capture_stdout(cmd)
+  stdout, status = Open3.capture2(cmd)
+  status.success? ? stdout : ''
+rescue => _e
+  ''
+end
+
+# Default partition filter; calling form.yml.erb can override before the include
+# by setting `@partition_filter = :cpu` (or :gpu). Used as the default for the
+# four generate_* helpers so app authors only set it in one place.
+@partition_filter ||= :all
+
+@nodes_out = capture_stdout('scontrol show node --oneliner')
+
+# Capture partition time limits
+@partitions_info = capture_stdout('sinfo -o "%P %l"')
+
+# Capture partition scheduling caps (MaxMemPerNode, MaxCPUsPerNode).
+# Node CfgTRES reports physical mem/cpus, but the partition can cap what's
+# actually schedulable (e.g. batch nodes have 1008 GB but MaxMemPerNode=503 GB).
+@partitions_detail = capture_stdout('scontrol show partition --oneliner')
+@partition_max_mem_mb = {}
+@partition_max_cpus   = {}
+
+@partitions_detail.each_line do |line|
+  name = line[/\bPartitionName=(\S+)/, 1]
+  next unless name
+
+  if (m = line.match(/\bMaxMemPerNode=(\S+)/))
+    raw = m[1]
+    unless raw.nil? || raw.upcase.start_with?('UNLIMITED')
+      mb = raw.to_i
+      @partition_max_mem_mb[name] = mb if mb > 0
+    end
+  end
+
+  if (m = line.match(/\bMaxCPUsPerNode=(\S+)/))
+    raw = m[1]
+    unless raw.nil? || raw.upcase.start_with?('UNLIMITED')
+      n = raw.to_i
+      @partition_max_cpus[name] = n if n > 0
+    end
+  end
+end
+
+# Parsing the SLURM output
+@detected_types = Set.new
+@detected_gres_names = Set.new
+
+# Per-partition tracking
+@detected_by_partition    = Hash.new { |h, k| h[k] = Set.new }
+
+# Core/CPU tracking per partition AND GPU type
+@max_cores_by_partition_and_gpu   = Hash.new { |h, k| h[k] = Hash.new(0) }
+
+# Memory tracking per partition AND GPU type (in MB)
+@max_memory_by_partition_and_gpu  = Hash.new { |h, k| h[k] = Hash.new(0) }
+
+# GPU count tracking per partition AND GPU type
+@max_gpus_by_partition_and_gpu = Hash.new { |h, k| h[k] = Hash.new(0) }
+
+# Track node availability per GPU type (for unavailability warnings)
+@gpu_type_node_states = Hash.new { |h, k| h[k] = { available: 0, unavailable: 0 } }
+
+# Time limit tracking per partition (in hours)
+@max_hours_by_partition = Hash.new(0)
+
+# Parse partition time limits from sinfo
+# Helper to determine if a node state is available for scheduling
+def node_is_available?(state_str)
+  return false if state_str.nil? || state_str.strip.empty?
+  
+  # Convert to uppercase for case-insensitive matching
+  state = state_str.upcase
+  
+  # States that make a node unavailable for scheduling (per SLURM scontrol/sinfo
+  # state docs). RESERVED/RESV are intentionally NOT here — reserved nodes are
+  # still schedulable for jobs in the reservation.
+  unavailable_states = [
+    'BLOCKED', 'CLOUD', 'COMP', 'COMPLETING',
+    'DOWN', 'DRAIN', 'DRAINED', 'DRAINING',
+    'FAIL', 'FAILING', 'FUTURE', 'FUTR',
+    'MAINT', 'NO_RESPOND', 'NOT_RESPONDING', 'NPC',
+    'PERFCTRS', 'PLANNED',
+    'POWER_DOWN', 'POWERING_DOWN', 'POWERED_DOWN', 'POWERING_UP',
+    'REBOOT_ISSUED', 'REBOOT_REQUESTED',
+    'UNK', 'UNKNOWN'
+  ]
+  
+  # Check if any unavailable state is present
+  unavailable_states.any? { |s| state.include?(s) } ? false : true
+end
+
+# Helper to convert SLURM time format to hours
+def parse_slurm_time(time_str)
+  return 0 if time_str.nil? || time_str.strip.empty? || time_str == 'infinite'
+  
+  # Handle "infinite" as a very large number (30 days = 720 hours)
+  return 720 if time_str.downcase.include?('infinite')
+  
+  # Format: "D-HH:MM:SS" or "HH:MM:SS" or "MM:SS" or "UNLIMITED"
+  if time_str.include?('-')
+    # Has days component
+    days_part, time_part = time_str.split('-')
+    days = days_part.to_i
+    
+    time_components = time_part.split(':').map(&:to_i)
+    hours = days * 24 + time_components[0]
+    # Ignore minutes and seconds for simplicity
+  else
+    # No days, just time
+    time_components = time_str.split(':').map(&:to_i)
+    if time_components.length == 3
+      # HH:MM:SS
+      hours = time_components[0]
+    elsif time_components.length == 2
+      # MM:SS (treat as hours:minutes)
+      hours = time_components[0]
+    else
+      hours = time_components[0] || 0
+    end
+  end
+  
+  hours
+end
+
+@partitions_info.each_line do |line|
+  next if line.include?('PARTITION') # Skip header
+  
+  parts = line.strip.split(/\s+/)
+  next if parts.length < 2
+  
+  partition_name = parts[0].gsub('*', '') # Remove default marker
+  time_limit = parts[1]
+  
+  hours = parse_slurm_time(time_limit)
+  @max_hours_by_partition[partition_name] = hours if hours > 0
+end
+
+# Collect user-accessible partition names (sinfo without --all filters by access)
+@user_partitions = []
+@partitions_info.each_line do |line|
+  next if line.include?('PARTITION')
+  parts = line.strip.split(/\s+/)
+  next if parts.length < 2
+  partition_name = parts[0].gsub('*', '')
+  @user_partitions << partition_name
+end
+
+@nodes_out.each_line do |line|
+  # Gres=gpu:<type>:<count>
+  if (m = line.match(/\bGres=gpu:([[:alnum:]_.-]+)/))
+    type = m[1]
+    if type && type != 'null'
+      @detected_types << type
+      @detected_gres_names << type
+    end
+  end
+
+  # Features may contain GPU-specific variants such as a100-40G / a100-80G.
+  feats_available = line[/\bAvailableFeatures=(\S+)/, 1]
+  feats_active    = line[/\bActiveFeatures=(\S+)/, 1]
+  feats_legacy    = line[/\bFeature(?:s)?=(\S+)/, 1]
+  feature_tokens = [feats_available, feats_active, feats_legacy]
+                   .compact
+                   .flat_map { |value| value.split(',') }
+                   .uniq
+  gpu_feature_variants = feature_tokens.select { |token| token.match?(/\A[[:alnum:]_.+]+-\d+[[:alpha:]]+\z/) }
+  gpu_feature_variants.each { |variant| @detected_types << variant }
+
+  # Extract node state for availability tracking
+  node_state = line[/\bState=(\S+)/, 1]
+  is_available = node_is_available?(node_state)
+
+  # Partition list for this node
+  parts_str = line[/\bPartitions=(\S+)/, 1]
+  parts = parts_str ? parts_str.split(',') : []
+
+  # Extract CPU/Core information (use CPUEfctv as it represents what's schedulable)
+  cpu_efctv = line[/\bCPUEfctv=(\d+)/, 1]
+  cores = cpu_efctv ? cpu_efctv.to_i : 0
+
+  # Extract Memory information from CfgTRES (what's actually schedulable)
+  # Format: CfgTRES=cpu=64,mem=514943M,billing=64 or mem=1500G
+  cfg_tres = line[/\bCfgTRES=([^\s]+)/, 1]
+  memory_mb = 0
+  if cfg_tres && cfg_tres.include?('mem=')
+    mem_match = cfg_tres.match(/mem=(\d+(?:\.\d+)?)([MG])/)
+    if mem_match
+      mem_value = mem_match[1].to_f
+      mem_unit = mem_match[2]
+      # Convert to MB for consistent storage
+      memory_mb = (mem_unit == 'G') ? (mem_value * 1024).to_i : mem_value.to_i
+    end
+  end
+
+  # Determine GPU type(s) for this node
+  gpu_types_on_node = Set.new
+  gpu_count_on_node = 0
+
+  # Check for GPU in Gres field
+  if (m = line.match(/\bGres=gpu:([[:alnum:]_.-]+)(?::(\d+))?/))
+    gpu_type = m[1]
+    if gpu_type && gpu_type != 'null'
+      gpu_types_on_node << gpu_type
+      gpu_count_on_node = m[2].to_i if m[2]
+    end
+  end
+
+  gpu_feature_variants.each { |variant| gpu_types_on_node << variant }
+
+  # If no GPUs detected, this is a "none" node
+  if gpu_types_on_node.empty?
+    gpu_types_on_node << 'none'
+  end
+  
+  # Track node availability for each GPU type on this node
+  gpu_types_on_node.each do |gpu_type|
+    next if gpu_type == 'none'  # Don't track availability for non-GPU nodes
+    
+    if is_available
+      @gpu_type_node_states[gpu_type][:available] += 1
+    else
+      @gpu_type_node_states[gpu_type][:unavailable] += 1
+    end
+  end
+  
+  # Track cores and memory by partition AND GPU type. Skip nodes that are not
+  # currently schedulable so down/drained/maint nodes don't inflate the cap
+  # users see (e.g. batch's pax072/073 advertising 1008 GB while DOWN+DRAIN).
+  if is_available
+    parts.each do |p|
+      gpu_types_on_node.each do |gpu_type|
+        if cores > @max_cores_by_partition_and_gpu[p][gpu_type]
+          @max_cores_by_partition_and_gpu[p][gpu_type] = cores
+        end
+        if memory_mb > @max_memory_by_partition_and_gpu[p][gpu_type]
+          @max_memory_by_partition_and_gpu[p][gpu_type] = memory_mb
+        end
+        if gpu_type != 'none' && gpu_count_on_node > @max_gpus_by_partition_and_gpu[p][gpu_type]
+          @max_gpus_by_partition_and_gpu[p][gpu_type] = gpu_count_on_node
+        end
+      end
+    end
+  end
+
+  # Record per-partition types
+  if (m = line.match(/\bGres=gpu:([[:alnum:]_.-]+)/))
+    type = m[1]
+    if type && type != 'null'
+      parts.each { |p| @detected_by_partition[p] << type }
+    end
+  end
+
+  gpu_feature_variants.each do |variant|
+    parts.each { |p| @detected_by_partition[p] << variant }
+  end
+end
+
+# If a partition has feature variants like a100-40G/a100-80G, prefer them over the
+# generic base GPU id (a100) for display and selection.
+variant_bases = @detected_types
+  .select { |gpu_type| gpu_type.include?('-') }
+  .map { |gpu_type| gpu_type.split('-', 2).first }
+  .to_set
+
+@detected_types.subtract(variant_bases)
+@detected_by_partition.each_value do |types|
+  local_variant_bases = types
+    .select { |gpu_type| gpu_type.include?('-') }
+    .map { |gpu_type| gpu_type.split('-', 2).first }
+    .to_set
+  types.subtract(local_variant_bases)
+end
+
+# Flag if dynamic discovery failed (no types detected)
+@dynamic_failed = @detected_types.empty?
+
+# Determine which GPU types are completely unavailable (all nodes down/drained)
+@unavailable_gpu_types = Set.new
+@gpu_type_node_states.each do |gpu_type, counts|
+  # If this GPU type has nodes but ALL are unavailable, mark it
+  if counts[:available] == 0 && counts[:unavailable] > 0
+    @unavailable_gpu_types << gpu_type
+  end
+end
+
+# TEMPORARY TEST: Force a GPU type to be unavailable for testing the warning
+
+#IMPORTANT LINE!!
+# @unavailable_gpu_types << 'a100_40'  # TEST ONLY - REMOVE AFTER TESTING
+
+# Zero-maintenance GPU labels derived directly from SLURM identifiers.
+# This avoids keeping a static map in sync as new GPU types are added.
+def gpu_display_label(gpu_type)
+  return gpu_type if gpu_type.nil? || gpu_type.empty?
+
+  parts = gpu_type.split(/[-_]/)
+  return gpu_type.upcase if parts.empty?
+
+  ([parts.first.upcase] + parts.drop(1)).join(' ')
+end
+
+# Cluster-wide default options
+@options = []
+if @detected_types.empty?
+  # No GPUs detected anywhere: keep a CPU-only sentinel.
+  @options << ['none', 'none']
+else
+  # GPUs detected: require users to select a concrete GPU type/feature.
+  remaining = @detected_types.to_a
+  remaining.sort_by! { |t| gpu_display_label(t) }
+  remaining.each do |t|
+    label = gpu_display_label(t)
+    @options << [label, t]
+  end
+end
+
+# Build partition-aware options map using the same labeling/ordering rules
+@partition_options_map = {}
+
+build_opts = lambda do |types_set|
+  local = []
+
+  if types_set.empty?
+    local << ['none', 'none']
+  else
+    remaining_local = types_set.to_a
+    remaining_local.sort_by! { |t| gpu_display_label(t) }
+    remaining_local.each do |t|
+      label = gpu_display_label(t)
+      local << [label, t]
+    end
+  end
+  local
+end
+
+@all_partitions = @user_partitions
+@all_partitions.each do |p|
+  @partition_options_map[p] = build_opts.call(@detected_by_partition[p])
+end
+
+# Also keep a cluster-wide default
+@partition_options_map['all'] = @options
+
+# Generate the complete gpu_type field definition
+def generate_gpu_type_field
+  # Build a map of unavailable GPU types with their friendly labels for warnings
+  unavailable_map = {}
+  @unavailable_gpu_types.each do |gpu_type|
+    unavailable_map[gpu_type] = gpu_display_label(gpu_type)
+  end
+  
+  field_yaml = <<~YAML
+  gpu_type:
+    widget: "select"
+    label: "GPU architecture"
+    cacheable: false
+    html_options:
+      data:
+        partition_options: '#{@partition_options_map.to_json}'
+        unavailable_gpus: '#{unavailable_map.to_json}'
+  YAML
+
+  if @dynamic_failed
+    field_yaml += <<~YAML
+    help: "Failed to dynamically obtain GPU options from Slurm on this host. Showing minimal defaults."
+    YAML
+  else
+    field_yaml += <<~YAML
+    help: "Auto-detected: types=#{@detected_types.to_a.join(',')}."
+    YAML
+  end
+
+  field_yaml += <<~YAML
+    options:
+  YAML
+
+  @options.each do |label, value|
+    field_yaml += <<~YAML
+      - [ "#{label}", "#{value}" ]
+    YAML
+  end
+
+  field_yaml += <<~YAML
+    javascript: "form.js"
+  YAML
+
+  field_yaml
+end
+
+# Clamp aggregated per-partition values by the partition-level scheduling caps
+# (MaxMemPerNode, MaxCPUsPerNode from `scontrol show partition`). Must happen
+# before we compute 'any' / 'all' / @global_max_* so those reflect what's
+# actually schedulable.
+@max_memory_by_partition_and_gpu.each do |partition, gpu_hash|
+  cap = @partition_max_mem_mb[partition]
+  next unless cap
+  gpu_hash.each { |gpu, val| gpu_hash[gpu] = cap if val > cap }
+end
+
+@max_cores_by_partition_and_gpu.each do |partition, gpu_hash|
+  cap = @partition_max_cpus[partition]
+  next unless cap
+  gpu_hash.each { |gpu, val| gpu_hash[gpu] = cap if val > cap }
+end
+
+# Compute "any" GPU values for each partition (max across all GPU types)
+# Also compute global fallback values for 'all' partition
+@max_cores_by_partition_and_gpu.each do |partition, gpu_hash|
+  if gpu_hash.any?
+    @max_cores_by_partition_and_gpu[partition]['any'] = gpu_hash.values.max
+  end
+end
+
+@max_memory_by_partition_and_gpu.each do |partition, gpu_hash|
+  if gpu_hash.any?
+    @max_memory_by_partition_and_gpu[partition]['any'] = gpu_hash.values.max
+  end
+end
+
+@max_gpus_by_partition_and_gpu.each do |partition, gpu_hash|
+  if gpu_hash.any?
+    @max_gpus_by_partition_and_gpu[partition]['any'] = gpu_hash.values.max
+  end
+end
+
+# Compute global max values for 'all' partition fallback
+all_cores = @max_cores_by_partition_and_gpu.values.flat_map(&:values)
+all_memory = @max_memory_by_partition_and_gpu.values.flat_map(&:values)
+all_gpus = @max_gpus_by_partition_and_gpu.values.flat_map(&:values)
+all_hours = @max_hours_by_partition.values
+
+@global_max_cores = all_cores.max || 64
+@global_max_memory = all_memory.max || 128000
+@global_max_gpus = all_gpus.max || 1
+@global_max_hours = all_hours.max || 72  # Default to 72 hours (3 days) if no partitions found
+
+# Set 'all' partition defaults (use global max for 'any' and 'none')
+@max_cores_by_partition_and_gpu['all']['any'] = @global_max_cores
+@max_cores_by_partition_and_gpu['all']['none'] = @global_max_cores
+@max_memory_by_partition_and_gpu['all']['any'] = @global_max_memory
+@max_memory_by_partition_and_gpu['all']['none'] = @global_max_memory
+@max_gpus_by_partition_and_gpu['all']['any'] = @global_max_gpus
+@max_gpus_by_partition_and_gpu['all']['none'] = 0
+@max_hours_by_partition['all'] = @global_max_hours
+
+# Select partitions matching the filter (:all, :gpu, :cpu)
+def partitions_for_filter(filter)
+  @user_partitions.select do |p|
+    has_gpu = !@detected_by_partition[p].empty?
+    case filter
+    when :gpu then has_gpu
+    when :cpu then !has_gpu
+    else true
+    end
+  end
+end
+
+# Scope a partition->gpu->value map to the filtered partitions.
+# Preserves the 'all' fallback so JS lookups still work.
+def scope_partition_gpu_map(map, filter)
+  allowed = partitions_for_filter(filter)
+  scoped = map.select { |k, _| allowed.include?(k) || k == 'all' }
+  scoped
+end
+
+def scope_partition_map(map, filter)
+  allowed = partitions_for_filter(filter)
+  map.select { |k, _| allowed.include?(k) || k == 'all' }
+end
+
+# Generate the complete num_gpus field definition
+def generate_num_gpus_field(filter: @partition_filter)
+  scoped_map = scope_partition_gpu_map(@max_gpus_by_partition_and_gpu, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values.flat_map(&:values)
+  scoped_max = partition_max_values.reject(&:zero?).max || 1
+  scoped_map['all'] = { 'any' => scoped_max, 'none' => 0 }
+
+  field_yaml = <<~YAML
+  num_gpus:
+    widget: "number_field"
+    label: "Number of GPUs"
+    cacheable: false
+    display: true
+    value: 1
+    min: 1
+    max: #{scoped_max}
+    step: 1
+    html_options:
+      data:
+        partition_gpu_max_gpus: '#{scoped_map.to_json}'
+        partition_filter: '#{filter}'
+    help: "Number of GPUs to allocate on one node. Max varies by partition and GPU type (Maximum: #{scoped_max} GPUs)."
+  YAML
+
+  field_yaml
+end
+
+# Generate the complete num_cores field definition
+def generate_num_cores_field(filter: @partition_filter)
+  scoped_map = scope_partition_gpu_map(@max_cores_by_partition_and_gpu, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values.flat_map(&:values)
+  scoped_max = partition_max_values.reject(&:zero?).max || @global_max_cores
+  scoped_map['all'] = { 'any' => scoped_max, 'none' => scoped_max }
+  varies_by = filter == :cpu ? 'partition' : 'partition and GPU type'
+
+  field_yaml = <<~YAML
+  num_cores:
+    widget: "number_field"
+    label: "Number of CPU cores"
+    cacheable: false
+    value: 1
+    min: 1
+    max: #{scoped_max}
+    step: 1
+    html_options:
+      data:
+        partition_gpu_max_cores: '#{scoped_map.to_json}'
+        partition_filter: '#{filter}'
+    help: "Number of CPU cores/threads to allocate. Max varies by #{varies_by} (Maximum: #{scoped_max} cores)."
+  YAML
+
+  field_yaml
+end
+
+# Generate the complete num_memory field definition
+def generate_num_memory_field(filter: @partition_filter)
+  scoped_map = scope_partition_gpu_map(@max_memory_by_partition_and_gpu, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values.flat_map(&:values)
+  scoped_max_mb = partition_max_values.reject(&:zero?).max || @global_max_memory
+  scoped_map['all'] = { 'any' => scoped_max_mb, 'none' => scoped_max_mb }
+  max_memory_gb = (scoped_max_mb / 1024.0).round
+  varies_by = filter == :cpu ? 'partition' : 'partition and GPU type'
+
+  field_yaml = <<~YAML
+  num_memory:
+    widget: "number_field"
+    label: "Memory per node (GB)"
+    cacheable: false
+    display: true
+    value: 4
+    min: 1
+    max: #{max_memory_gb}
+    step: 1
+    html_options:
+      data:
+        partition_gpu_max_memory: '#{scoped_map.to_json}'
+        partition_filter: '#{filter}'
+    help: "Amount of memory to allocate per node in GB. Max varies by #{varies_by} (Maximum: #{max_memory_gb} GB)."
+  YAML
+
+  field_yaml
+end
+
+# Generate the complete bc_num_hours field definition
+def generate_num_hours_field(filter: @partition_filter)
+  scoped_map = scope_partition_map(@max_hours_by_partition, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values
+  scoped_max = partition_max_values.reject(&:zero?).max || @global_max_hours
+  scoped_map['all'] = scoped_max
+
+  field_yaml = <<~YAML
+  bc_num_hours:
+    cacheable: false
+    value: 1
+    min: 1
+    max: #{scoped_max}
+    step: 1
+    html_options:
+      data:
+        partition_max_hours: '#{scoped_map.to_json}'
+    help: "Number of hours to run the job. Max varies by partition (Maximum: #{scoped_max} hours)."
+  YAML
+
+  field_yaml
+end
+
+# Generate the partition field definition using user-accessible partitions
+# filter: :all (default), :gpu (GPU partitions only), :cpu (CPU-only partitions)
+def generate_partition_field(filter: @partition_filter)
+  filtered = @user_partitions.select do |p|
+    has_gpu = !@detected_by_partition[p].empty?
+    case filter
+    when :gpu then has_gpu
+    when :cpu then !has_gpu
+    else true
+    end
+  end
+  default_partition =
+    case filter
+    when :gpu
+      filtered.include?('gpu') ? 'gpu' : filtered.first
+    when :cpu, :all
+      filtered.include?('batch') ? 'batch' : filtered.first
+    else
+      filtered.first
+    end
+
+  field_yaml = <<~YAML
+  partition:
+    widget: "select"
+    label: "Partition"
+    cacheable: false
+    javascript: "form.js"
+    value: "#{default_partition}"
+    help: "Partitions available to you (dynamically detected via SLURM)."
+    options:
+  YAML
+
+  filtered.each do |p|
+    field_yaml += "    - [\"#{p}\", \"#{p}\"]\n"
+  end
+
+  field_yaml
+end
+
+# =============================================================================
+# DEBUG LOGGING - Set to true to enable logging to ~/javi_gpu_debug.log
+# =============================================================================
+DEBUG_GPU_DISCOVERY = false
+
+if DEBUG_GPU_DISCOVERY
+  begin
+    debug_log = File.join(ENV['HOME'], 'javi_gpu_debug.log')
+    File.open(debug_log, 'a') do |f|
+      f.puts "=== #{Time.now} ==="
+      f.puts "PATH=#{ENV['PATH']}"
+      f.puts "nodes_out_bytes=#{@nodes_out&.bytesize}"
+      f.puts "detected_types=#{@detected_types.to_a.inspect}"
+      f.puts "detected_gres_names=#{@detected_gres_names.to_a.inspect}"
+      f.puts "options=#{@options.inspect}"
+      f.puts "user_partitions=#{@user_partitions.inspect}"
+      f.puts "partitions_seen=#{@all_partitions.inspect}"
+      f.puts "partition_options_map_keys=#{@partition_options_map.keys.inspect}"
+      f.puts "max_cores_by_partition_and_gpu=#{@max_cores_by_partition_and_gpu.inspect}"
+      f.puts "global_max_cores=#{@global_max_cores}"
+      f.puts "max_memory_by_partition_and_gpu=#{@max_memory_by_partition_and_gpu.inspect}"
+      f.puts "global_max_memory=#{@global_max_memory}"
+      f.puts "max_gpus_by_partition_and_gpu=#{@max_gpus_by_partition_and_gpu.inspect}"
+      f.puts "global_max_gpus=#{@global_max_gpus}"
+      f.puts "max_hours_by_partition=#{@max_hours_by_partition.inspect}"
+      f.puts "global_max_hours=#{@global_max_hours}"
+      f.puts "unavailable_gpu_types=#{@unavailable_gpu_types.to_a.inspect}"
+      f.puts "gpu_type_node_states=#{@gpu_type_node_states.inspect}"
+    end
+  rescue => e
+    # swallow logging errors so the form still renders
+  end
+end
+%>
