@@ -1,9 +1,9 @@
 
 #remove any failed renders
-find ${OUTPUT_DIR} -type f -name '*.png' -size 0 -delete
+find "$OUTPUT_DIR" -type f -name '*.png' -size 0 -delete
 
 #Count PNG files
-COUNT_FRAME_FILES=$(find ${OUTPUT_DIR} -type f -name '*.png' | wc -l)
+COUNT_FRAME_FILES=$(find "$OUTPUT_DIR" -type f -name '*.png' | wc -l)
 
 #COUNT RENDERED THIS Job
 RENDERED_THIS_JOB=$(cat ./output.log | grep "Saved" | wc -l)
@@ -44,4 +44,4 @@ jq -n \
 
 
 echo "Removing lock file."
-rm ${OUTPUT_DIR}/.lock
+rm "${OUTPUT_DIR}/.lock"

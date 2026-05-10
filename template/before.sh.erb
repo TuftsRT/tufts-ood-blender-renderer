@@ -26,6 +26,8 @@ if [ -z "$(echo "$OUTPUT_DIR" | xargs)" ]; then
     export OUTPUT_DIR="$BLENDER_PROJECT_DIR_PATH/output"
 fi
 
+mkdir -p "$OUTPUT_DIR"
+
 echo "Checking for existing lock"
 
 if [ -e "${OUTPUT_DIR}/.lock" ]; then
@@ -33,12 +35,12 @@ if [ -e "${OUTPUT_DIR}/.lock" ]; then
   exit 1
 fi
 
-echo "Locking" > ${OUTPUT_DIR}/.lock
+echo "Locking" > "${OUTPUT_DIR}/.lock"
 
 
 echo "Looking for empty render files to clean up."
 
-find ${OUTPUT_DIR} -type f -name '*.png' -size 0
-find ${OUTPUT_DIR} -type f -name '*.png' -size 0 -delete
+find "$OUTPUT_DIR" -type f -name '*.png' -size 0
+find "$OUTPUT_DIR" -type f -name '*.png' -size 0 -delete
 
 echo "Done Cleaning."

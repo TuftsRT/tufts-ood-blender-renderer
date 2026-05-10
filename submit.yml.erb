@@ -5,6 +5,8 @@ script:
   job_name: "Blender_renderer"
 <%
   selected_gpu_type = gpu_type.to_s
+  raise "A GPU architecture is required for this Blender form." if selected_gpu_type.empty? || selected_gpu_type == 'none'
+
   gpu_gres_name = selected_gpu_type.split('-', 2).first
 %>
   native:
