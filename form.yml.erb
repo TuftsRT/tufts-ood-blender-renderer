@@ -9,9 +9,6 @@
   else
     max_slots = 1
   end
-
-  qos_options = (`sacctmgr show assoc where user=#{ENV['USER']} format=qos%1000 --noheader --parsable2 `).split(",")
-  qos_default = "normal"
 %>
 
 ---
@@ -25,15 +22,6 @@ attributes:
 <%= generate_num_cores_field.indent(2) %>
 <%= generate_num_memory_field.indent(2) %>
 <%= generate_num_hours_field.indent(2) %>
-
-  ta_qos:
-    widget: "select"
-    label: "Slurm QOS"
-    options:
-<% qos_options.each do |n| %>
-    - ["<%= n %>", "<%= n %>"]
-<% end %>  
-    value: "<%=qos_default %>"
 
   bc_num_slots:
     min: 1
@@ -77,9 +65,6 @@ form:
   - num_cores
   - num_memory
   - bc_num_hours
-<%if qos_options.size > 1 %>
-  - ta_qos
-<%end%>
   - bc_num_slots
   - projectfile
   - outputdir

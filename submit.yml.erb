@@ -19,6 +19,3 @@ script:
     - "--cpus-per-task=<%=num_cores %>"
     - "--time=0<%=bc_num_hours %>:00:00"
     - "--error=output.err"
-<% if ta_qos %>
-    - "--qos=<%=ta_qos %>"
-<% end %>
