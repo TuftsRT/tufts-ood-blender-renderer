@@ -1,8 +1,5 @@
 <%
-  @partition_filter = :gpu
-
-  _partial_path = File.expand_path('dynamic_form_files/resource_discovery.erb', __dir__)
-  _resource_result = ERB.new(File.read(_partial_path)).result(binding)
+  ERB.new(File.read(File.expand_path('partials/gpu_discovery.erb', __dir__))).result(binding)
 
   if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender']).any?
     max_slots = 6
@@ -13,21 +10,29 @@
 
 ---
 cluster: "pax"
-bc_dynamic_js: true
+
+form:
+  - bc_num_hours
+  - num_cores
+  - num_memory
+  - partition
+  - gpu_type
+  - bc_num_slots
+  - projectfile
+  - outputdir
+  - start_frame
+  - end_frame
 
 attributes:
 <%= generate_partition_field.indent(2) %>
-<%= generate_gpu_type_field.indent(2) %>
-<%= generate_num_gpus_field.indent(2) %>
 <%= generate_num_cores_field.indent(2) %>
 <%= generate_num_memory_field.indent(2) %>
+<%= generate_gpu_type_field.indent(2) %>
 <%= generate_num_hours_field.indent(2) %>
 
   bc_num_slots:
     min: 1
-    max: <%=max_slots %>
-
-
+    max: <%= max_slots %>
 
   projectfile:
     label: Blender Project File
@@ -57,16 +62,3 @@ attributes:
     label: "End at frame number"
     help: "Enter the number of the frame to end at.  Level blank to render to the last frame."
     value: ""
-
-form:
-  - partition
-  - gpu_type 
-  - num_gpus
-  - num_cores
-  - num_memory
-  - bc_num_hours
-  - bc_num_slots
-  - projectfile
-  - outputdir
-  - start_frame
-  - end_frame

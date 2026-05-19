@@ -3,19 +3,27 @@ batch_connect:
 
 script:
   job_name: "Blender_renderer"
-<%
-  selected_gpu_type = gpu_type.to_s
-  raise "A GPU architecture is required for this Blender form." if selected_gpu_type.empty? || selected_gpu_type == 'none'
-
-  gpu_gres_name = selected_gpu_type.split('-', 2).first
-%>
   native:
-    - "--nodes=<%=bc_num_slots %>"
-    - "--gres=gpu:<%=gpu_gres_name %>:<%=num_gpus %>"
-    - "--ntasks=<%=bc_num_slots.to_i * num_gpus.to_i %>"
-    - "--constraint=<%=selected_gpu_type %>"
-    - "--partition=<%=partition %>"
-    - "--mem=<%=num_memory %>G"
-    - "--cpus-per-task=<%=num_cores %>"
-    - "--time=0<%=bc_num_hours %>:00:00"
+    - "--nodes=<%= bc_num_slots %>"
+    - "--ntasks=<%= bc_num_slots.to_i %>"
+    - "--cpus-per-task=<%= num_cores %>"
+    - "--mem=<%= num_memory %>G"
+    - "--time=<%= bc_num_hours %>:00:00"
+    - "-p <%= partition %>"
     - "--error=output.err"
+<%
+  skip_gres = gpu_type == "none" || ["batch", "largemem", "rc2", "pangolinlab", "ruiguolab", "shushkovlab", "vaseylab"].include?(partition)
+%>
+<% unless skip_gres %>
+  <% if gpu_type == "a100_40" %>
+    - "--gres=gpu:a100:1"
+    - "--constraint=a100-40G"
+  <% elsif gpu_type == "a100_80" %>
+    - "--gres=gpu:a100:1"
+    - "--constraint=a100-80G"
+  <% elsif gpu_type == "any" %>
+    - "--gres=gpu:1"
+  <% else %>
+    - "--gres=gpu:<%= gpu_type %>:1"
+  <% end %>
+<% end %>
