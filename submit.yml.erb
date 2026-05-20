@@ -12,18 +12,12 @@ script:
     - "-p <%= partition %>"
     - "--error=output.err"
 <%
-  skip_gres = gpu_type == "none" || ["batch", "largemem", "rc2", "pangolinlab", "ruiguolab", "shushkovlab", "vaseylab"].include?(partition)
+  selected_gpu = gpu_type.to_s.strip
+  gres_name = selected_gpu.split('-', 2).first unless selected_gpu.empty? || selected_gpu == 'none'
 %>
-<% unless skip_gres %>
-  <% if gpu_type == "a100_40" %>
-    - "--gres=gpu:a100:1"
-    - "--constraint=a100-40G"
-  <% elsif gpu_type == "a100_80" %>
-    - "--gres=gpu:a100:1"
-    - "--constraint=a100-80G"
-  <% elsif gpu_type == "any" %>
-    - "--gres=gpu:1"
-  <% else %>
-    - "--gres=gpu:<%= gpu_type %>:1"
-  <% end %>
+<% if gres_name %>
+    - "--gres=gpu:<%= gres_name %>:1"
+<% if selected_gpu.include?('-') %>
+    - "--constraint=<%= selected_gpu %>"
+<% end %>
 <% end %>

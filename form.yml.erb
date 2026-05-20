@@ -1,15 +1,19 @@
 <%
-  ERB.new(File.read(File.expand_path('partials/gpu_discovery.erb', __dir__))).result(binding)
+@partition_filter = :gpu
+_partial_path = File.expand_path('partials/resource_discovery.erb', __dir__)
+_resource_result = ERB.new(File.read(_partial_path)).result(binding)
 
-  if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender']).any?
-    max_slots = 6
-  else
-    max_slots = 1
-  end
+if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender']).any?
+  max_slots = 6
+else
+  max_slots = 1
+end
 %>
 
 ---
 cluster: "pax"
+
+bc_dynamic_js: true
 
 form:
   - bc_num_hours
