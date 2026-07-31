@@ -92,17 +92,17 @@ attributes:
     directory: /cluster/tufts
     favorites:
       - /cluster/tufts
-      - /cluster/home
+      - /cluster/home/<%=ENV['USER']%>
 
   outputdir:
     label: "Render output directory"
     widget: path_selector
-    directory: /cluster/home
+    directory: /cluster/home/<%=ENV['USER']%>
     show_files: false
     help: "Specifies the output directory for storing your rendered frames. If left unset, it defaults to a output folder next to your selected project file."
     favorites:
       - /cluster/tufts
-      - /cluster/home
+      - /cluster/home/<%=ENV['USER']%>
 
   start_frame:
     label: "Start at frame number"
