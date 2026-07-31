@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-#set -euo pipefail
 
+# Our clusters modules, you may need to change these for your own cluster.  
+# See Readme.md for more information on how to set up your own cluster for Blender rendering.
 module load modtree/deprecated
 module load blender/4.2.5
 module load cuda/11.7
@@ -37,7 +38,6 @@ srun --export=ALL \
      --cpus-per-task=${SLURM_CPUS_PER_TASK} \
      --gpu-bind=single:1 \
      /bin/bash -c '
-       #set -euo pipefail
 
        # Rank id 0..7
        RANK=${SLURM_PROCID}
