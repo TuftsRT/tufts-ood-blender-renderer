@@ -1,0 +1,217 @@
+# =============================================================================
+# appverse.yml — Appverse repository configuration reference
+# =============================================================================
+#
+# This file is BOTH a reference and a copy-paste template. It documents every
+# field Appverse reads from a repository's appverse.yml.
+#
+# Why appverse.yml is the preferred config
+# ----------------------------------------
+# Appverse can register a repo from EITHER of two root files:
+#
+#   • appverse.yml  — PREFERRED. You declare your catalog metadata explicitly:
+#                     which Software your app implements, its app type, tags,
+#                     maintainer, links, and (for repos that ship more than one
+#                     app) the full list of apps. This is also the ONLY way to
+#                     create a Monorepo (a repo with multiple apps).
+#
+#   • manifest.yml  — Supported. If a repo has only a manifest.yml (no
+#                     appverse.yml), Appverse infers a single app from it and
+#                     the repo's GitHub metadata. It reads the app's name and
+#                     description, and derives the app type from the manifest's
+#                     `role` (e.g. role: batch_connect). You can't set software,
+#                     tags, or the maintainer this way, and you can't make a
+#                     Monorepo. appverse.yml gives you all of that.
+#
+# Use appverse.yml so the catalog shows exactly what you intend.
+#
+# For the current valid App Types, implementation tags, and catalog Software
+# names that the match-required fields below check against, see the Appverse
+# contributor guide:
+#   https://openondemand.connectci.org/appverse-contributor-documentation
+#
+# Two shapes
+# ----------
+#   1. Single-app repo  — top-level fields describe the one app. No `apps:` key.
+#   2. Monorepo         — a top-level `apps:` list; each entry is one member app
+#                         living in a repo subpath.
+#
+# Both shapes are shown below. Copy the one that fits, delete the other, and
+# fill in your values.
+#
+# After editing appverse.yml in your repo, re-sync from the Appverse
+# maintenance hub to pull the changes into the catalog.
+#
+# -----------------------------------------------------------------------------
+# A NOTE ON WHAT YOU DON'T SET HERE
+# -----------------------------------------------------------------------------
+# A few things you might expect to set come from GitHub automatically, so don't
+# put them in appverse.yml: the organization (your repo owner), star count, last
+# commit, and the README (fetched from your README.md files).
+#
+# =============================================================================
+
+
+# =============================================================================
+# SHAPE 1 — SINGLE-APP REPO
+# =============================================================================
+# Top-level fields describe the repo AND its one app. Do NOT include an `apps:`
+# key. Appverse creates a single catalog app at the repo root from these
+# top-level fields. (Field semantics are identical to the Monorepo per-app
+# fields below.)
+
+# --- Repo-level fields (also serve as the single app's metadata) -------------
+
+title: "RStudio Server"
+# Set this. It's the app's display name (optional — falls back to the GitHub
+# repo name, but repo names like bc_rstudio make poor catalog titles, so give
+# it a clean, human title).
+
+description: "RStudio Server on HPC via Open OnDemand."
+# REQUIRED. Short description, shown in the catalog. Markdown is allowed.
+# Missing description marks the app rejected.
+
+software: "RStudio"
+# Required for the app to be accepted. Must match the NAME of an existing
+# Software entry in the Appverse catalog (case-insensitive). If it doesn't
+# match, the app is rejected and the form/preview suggests the closest name
+# ("did you mean …?"). It does NOT create new Software — ask an admin if your
+# software isn't in the catalog yet.
+
+app_type: "batch-connect-basic"
+# REQUIRED. Must match an App Type exactly (case-insensitive, but keep the
+# hyphens). One value only. Current values: batch-connect-basic,
+# batch-connect-VNC, companion_app, widget, dashboard. Unknown values are
+# rejected with a suggestion.
+
+implementation_tags:
+  - "gpu-enabled"
+  - "containerized"
+# Optional. This app's IMPLEMENTATION tags — they describe how the app runs
+# (gpu-enabled, containerized, etc.). Each must match an existing term in the
+# implementation-tags vocabulary (case-insensitive); unmatched tags are flagged
+# with a "did you mean …?" suggestion and reject the app, valid ones are
+# applied. Omit the key for none.
+#
+# Note the key is `implementation_tags`, not `tags`. At the repo level (Monorepo
+# SHAPE 2 below) a separate `tags:` key means the repo's DISCOVERY tags, a
+# different vocabulary — don't confuse the two.
+
+maintainer:
+  name: "OSC User Support"
+  # REQUIRED. The person or team responsible for this app. Free text.
+  # Missing maintainer.name marks the app rejected.
+  support_url: "https://example.org/support"
+  # REQUIRED. Where users go for help with THIS app. Must be a URL.
+  # Missing maintainer.support_url marks the app rejected.
+
+website: "https://example.org/rstudio"
+# Optional. The app/project's main website. Must be a URL. Omit for none.
+
+docs: "https://example.org/rstudio/docs"
+# Optional. Documentation URL. Must be a URL. Omit for none.
+
+# shared_paths:
+#   - "shared/"
+# Optional. Repo-relative paths shared across the repo (e.g. a shared assets
+# or docs directory). List of strings. Rarely needed for single-app repos.
+
+
+# =============================================================================
+# SHAPE 2 — MONOREPO (multiple apps in one repo)
+# =============================================================================
+# Delete SHAPE 1 above and use this instead when one repo ships more than one
+# app. Top-level keys describe the REPO; the `apps:` list describes each member
+# app. A repo with 2+ apps is shown in the catalog as a "Monorepo".
+#
+# (This block is commented out so this file stays a valid single example.
+# Uncomment and adapt if your repo is a Monorepo.)
+#
+# title: "Example Monorepo"          # Optional repo title (defaults to repo name).
+# description: "Two example apps."    # REQUIRED repo description.
+# website: "https://example.org"      # Optional repo website URL.
+# docs: "https://example.org/docs"    # Optional repo docs URL.
+# tags:                               # Optional. The repo's DISCOVERY tags
+#   - "hpc"                           # (the `tags` vocabulary) — used to find the
+#   - "containerized"                 # Monorepo in the catalog. These describe the
+#                                     # REPO and do NOT flow to the member apps.
+#                                     # They are a DIFFERENT vocabulary from a
+#                                     # member app's `implementation_tags`.
+# shared_implementation_tags:         # Optional. IMPLEMENTATION tags inherited by
+#   - "containerized"                 # EVERY member app (additive — unioned with
+#                                     # each app's own implementation_tags). Same
+#                                     # vocabulary as a member app's
+#                                     # implementation_tags. Use this to avoid
+#                                     # repeating tags every app shares.
+# maintainer:                         # Optional repo-level maintainer. A member
+#   name: "Example Team"              # app that declares no maintainer of its own
+#   support_url: "https://example.org/support"   # INHERITS this one; an app with
+#                                     # its own maintainer overrides it.
+# shared_paths:                       # Optional shared subpaths.
+#   - "shared/"
+#
+# apps:
+#   # Each entry is ONE member app. `path` is required; the other per-app
+#   # fields can be declared INLINE here (the simplest approach — no extra
+#   # files needed), OR in a <path>/appverse.yml inside the subpath.
+#   - path: "jupyter"
+#     # REQUIRED. The repo-relative subpath of this app. Identifies the app;
+#     # must be unique within the repo. (An app whose subpath is removed from
+#     # this list on a later sync is removed from the catalog.)
+#     name: "Jupyter (Example)"       # REQUIRED. App display name.
+#     description: "Example Jupyter."  # REQUIRED. App description (markdown ok).
+#     software: "Jupyter"              # Required-for-acceptance. Match catalog Software.
+#     app_type: "batch-connect-basic"  # REQUIRED. Match App Type (see top of file).
+#     implementation_tags:            # Optional. This app's implementation tags
+#       - "jupyter"                   # (implementation-tags vocab). Unioned with the
+#                                     # repo's shared_implementation_tags above, so
+#                                     # this app ends up with: jupyter, containerized.
+#     maintainer:
+#       name: "Example Team"           # REQUIRED for the app — unless inherited from
+#       support_url: "https://example.org/support"   # the repo-level maintainer.
+#
+#   - path: "rstudio"
+#     name: "RStudio (Example)"
+#     description: "Example RStudio."
+#     software: "RStudio"
+#     app_type: "batch-connect-basic"
+#     # No maintainer here: this app INHERITS the repo-level maintainer above.
+#     # No implementation_tags here: it still gets the shared "containerized".
+
+
+# =============================================================================
+# PRECEDENCE — where a member app's metadata comes from
+# =============================================================================
+# For a Monorepo member app, each field is resolved in this order (first match
+# wins):
+#
+#   1. The inline value in this file's `apps[]` entry         (highest priority)
+#   2. The value in that subpath's own  <path>/appverse.yml
+#   3. For `name` and `description` ONLY: <path>/manifest.yml  (lowest priority)
+#
+# In other words: anything you put inline in `apps[]` overrides the subpath's
+# appverse.yml. manifest.yml is only ever consulted as a last-resort fallback
+# for `name` and `description` — app_type, software, implementation_tags, and
+# maintainer are Appverse-only and are never read from manifest.yml.
+#
+# So the simplest Monorepo declares everything inline in `apps[]` and needs no
+# per-subpath appverse.yml files at all.
+#
+# Two fields inherit from the repo level into each member app:
+#   • maintainer               — an app with no maintainer of its own inherits
+#                                the repo-level maintainer (override if declared).
+#   • shared_implementation_tags — unioned into every app's implementation_tags.
+# The repo's own `tags:` (discovery) do NOT inherit; they describe the repo only.
+#
+# =============================================================================
+# REQUIRED-FIELD SUMMARY (an app is "rejected" — not listed — if any is missing)
+# =============================================================================
+#   Repo:        description
+#   Each app:    name, description, app_type, maintainer.name, maintainer.support_url
+#                (maintainer may be inherited from the repo level; software is
+#                 also needed to resolve to a catalog Software — an app with no
+#                 matching software is rejected.)
+#
+# A rejected app keeps any previously-good data in place and re-validates on the
+# next sync once the missing fields are added — it won't silently vanish.
+# =============================================================================
