@@ -62,6 +62,15 @@ The most common failure end users will see is that their Open On Demand app will
 
 This is a mismatch between the version of the Blender software running on the cluster, and the version that created the Blender input file you are using.  Results will be mixed, but it is best to update the Blender software to be compatible.
 
+### Failure when restarting a render into the same output folder
+
+The app prevents multiple jobs from rendering into the same output folder at the same time by using a .lock file.  In hard crash situations this .lock file may remain after the job ends.  It is safe to remove if you have no running jobs and get this error.  For reference the contents of the .lock is the Job ID of the slurm job that created it, so you can use squeue to confirm the job is no longer running before deletion.
+
+```
+Error: /cluster/path/output/folder/.lock exists, exiting.  It is only safe to run 1 copy of this per output folder at a time.
+If no other render job is writing to this folder, delete the .lock file and resubmit.
+```
+
 ## Contributing
 
 Contributions are welcome. To contribute:
