@@ -16,6 +16,7 @@ Open OnDemand app to render animations using Blender on a HPC cluster using GPUs
 
 * Blender 4.0+
 * CUDA 11.7+
+* modules 
 
 ### Open OnDemand
 * Open OnDemand 4.0+
@@ -40,10 +41,11 @@ git checkout v1.0.0
 
 ### 2. Configure for your site
 
-To use this Open OnDemand app you need to have CUDA and Blender available.  This app assumes the use of modules, and includes the names/version for our cluster.  Update these as needed in \template\before.sh.erb and \template\script.sh.erb .  Additionally if CUDA and Blender are installed system wide, and available in your PATH variable, these module lines can be removed.
+To use this Open OnDemand app you need to have CUDA and Blender available.  This app assumes the use of modules, and includes the names/version for our cluster.  Update these as needed in the form.yml.erb file, version: can be set to include the modules for one or more version of Blender.
 
-Note: `module load modtree/deprecated` is proprietary to our cluster, and can be removed.
+Note: `modtree/deprecated` is proprietary to our cluster, and can be removed.
 
+Also set the value of cluster: to the proper name for your site.
 
 ### 3. Verify
 

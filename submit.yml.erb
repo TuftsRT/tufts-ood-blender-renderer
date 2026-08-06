@@ -9,7 +9,7 @@ script:
     - "--cpus-per-task=<%= num_cores %>"
     - "--mem=<%= num_memory %>G"
     - "--time=<%= bc_num_hours %>:00:00"
-    - "-p <%= partition %>"
+    - "--partition=<%= partition %>"
     - "--error=output.err"
 <%
   selected_gpu = gpu_type.to_s.strip

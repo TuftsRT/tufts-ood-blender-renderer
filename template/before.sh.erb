@@ -1,8 +1,4 @@
-# Our clusters modules, you may need to change these for your own cluster.  
-# See Readme.md for more information on how to set up your own cluster for Blender rendering.
-module load modtree/deprecated
-module load blender/4.2.5
-module load cuda/11.7
+module load <%= context.version %>
 
 export OUTPUT_DIR="<%= context.outputdir %>"
 export BLENDER_PROJECT="<%= context.projectfile %>"
