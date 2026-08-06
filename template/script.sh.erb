@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 
-#set -euo pipefail
-
-module load modtree/deprecated
-module load blender/4.2.5
-module load cuda/11.7
+module load <%= context.version %>
 
 hostname
 pwd
@@ -37,7 +33,6 @@ srun --export=ALL \
      --cpus-per-task=${SLURM_CPUS_PER_TASK} \
      --gpu-bind=single:1 \
      /bin/bash -c '
-       #set -euo pipefail
 
        # Rank id 0..7
        RANK=${SLURM_PROCID}

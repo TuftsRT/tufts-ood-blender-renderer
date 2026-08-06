@@ -9,3 +9,82 @@ Open OnDemand app to render animations using Blender on a HPC cluster using GPUs
 - Automatically blocks multiple renderers and cleans up failed frame files
 - Supports GPU Model, Parition and QOS selection
 - Detects and warns about Out of Memory (OOM) errors
+
+## Requirements
+
+### Compute Node Software
+
+* Blender 4.0+
+* CUDA 11.7+
+* modules 
+
+### Open OnDemand
+* Open OnDemand 4.0+
+* Slurm
+
+## App Installation 
+Please see the [References section](#software-installation) below for instructions on how to install the software that is launched by this App.
+
+### 1. Clone the repository
+```bash
+# Batch Connect / Passenger apps:
+cd /var/www/ood/apps/sys
+
+# Widgets / Dashboards — check OOD docs for the correct path
+
+git clone https://github.com/TuftsRT/tufts-ood-blender-renderer
+cd tufts-ood-blender-renderer
+
+# Pin to a release (recommended)
+git checkout v1.0.0
+```
+
+### 2. Configure for your site
+
+To use this Open OnDemand app you need to have CUDA and Blender available.  This app assumes the use of modules, and includes the names/version for our cluster.  Update these as needed in the form.yml.erb file, version: can be set to include the modules for one or more version of Blender.
+
+Note: `modtree/deprecated` is proprietary to our cluster, and can be removed.
+
+Also set the value of cluster: to the proper name for your site.
+
+### 3. Verify
+
+<!-- Batch Connect: -->
+No OOD restart is needed (Batch Connect apps are detected automatically). Visit your OOD dashboard and look for **[App Name]** under **Interactive Apps > [Category]**.
+
+## Troubleshooting
+
+Most errors will be clear if you review the output.err and output.log files.  Typical issues are the input file or output folder paths being wrong, or not being able to load or find the Blender software.  The output.log file includes debugging information such as the nodes allocated, GPU info, which nodes are rendering which frames.
+
+### Tasks or Job ends abruptly, Out of Memory OOM
+
+The most common failure end users will see is that their Open On Demand app will end with "Killed" messages in the log files.  If running multiple tasks they will be killed individually, but the job will end when they are all killed.  Each frame in a Blender file can take a different amount of memory, if the Blender app uses more than was allocated in Slurm, Slurm will kill the task.  The form will monitor for these errors and warn the user if it sees "Killed" log messages.  It also displays the "Peak memory per frame" it has seen so far to assist with future job specification.
+
+### Warning: File written by newer Blender binary (###.##), expect loss of data!
+
+This is a mismatch between the version of the Blender software running on the cluster, and the version that created the Blender input file you are using.  Results will be mixed, but it is best to update the Blender software to be compatible.
+
+### Failure when restarting a render into the same output folder
+
+The app prevents multiple jobs from rendering into the same output folder at the same time by using a .lock file.  In hard crash situations this .lock file may remain after the job ends.  It is safe to remove if you have no running jobs and get this error.  For reference the contents of the .lock is the Job ID of the slurm job that created it, so you can use squeue to confirm the job is no longer running before deletion.
+
+```
+Error: /cluster/path/output/folder/.lock exists, exiting.  It is only safe to run 1 copy of this per output folder at a time.
+If no other render job is writing to this folder, delete the .lock file and resubmit.
+```
+
+## Contributing
+
+Contributions are welcome. To contribute:
+
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/my-improvement`)
+3. Submit a pull request with a description of your changes
+
+For bugs or feature requests, [open an issue](https://github.com/TuftsRT/tufts-ood-blender-renderer/issues).
+
+This app is part of the [OOD Appverse](https://ondemand.connectci.org/affinity-groups/ood-appverse). Join the [Appverse Affinity Group](https://ondemand.connectci.org/affinity-groups/ood-appverse) to connect with other contributors.
+
+## License
+
+[MIT License](LICENSE)

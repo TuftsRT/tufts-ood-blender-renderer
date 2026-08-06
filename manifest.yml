@@ -3,5 +3,6 @@ name: "Blender Renderer"
 category: "Interactive Apps"
 subcategory: Apps
 role: "batch_connect"
+support_url: https://github.com/TuftsRT/tufts-ood-blender-renderer/issues
 description: |
   Renders Blender Animation files in the background

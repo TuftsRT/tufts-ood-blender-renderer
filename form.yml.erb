@@ -6,12 +6,12 @@ _resource_result = ERB.new(File.read(_partial_path)).result(binding)
 if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender']).any?
   max_slots = 6
 else
-  max_slots = 1
+  max_slots = 2
 end
 %>
 
 ---
-cluster: "pax"
+cluster: "pax" #Set to your cluster name
 
 bc_dynamic_js: true
 
@@ -22,6 +22,7 @@ form:
   - partition
   - gpu_type
   - bc_num_slots
+  - version
   - projectfile
   - outputdir
   - start_frame
@@ -34,6 +35,12 @@ attributes:
 <%= generate_gpu_type_field.indent(2) %>
 <%= generate_num_hours_field.indent(2) %>
 
+  version:
+    label: Blender Version
+    widget: select
+    options:
+      - ["4.2.5", "modtree/deprecated blender/4.2.5 cuda/11.7"] # Our clusters modules, you probably need to change these for your own cluster, see Readme.md.
+
   bc_num_slots:
     min: 1
     max: <%= max_slots %>
@@ -41,20 +48,15 @@ attributes:
   projectfile:
     label: Blender Project File
     widget: path_selector
-    directory: /cluster/tufts
-    favorites:
-      - /cluster/tufts
-      - /cluster/home
+    required: true
 
   outputdir:
     label: "Render output directory"
     widget: path_selector
-    directory: /cluster/home
+    required: true
     show_files: false
     help: "Specifies the output directory for storing your rendered frames. If left unset, it defaults to a output folder in the same folder as your selected project file, if you have mutliple project files in the same folder, make sure to specific a clean output folder for each run. Please make sure the output folder is fresh and has no hidden .lock files."
-    favorites:
-      - /cluster/tufts
-      - /cluster/home
+
 
   start_frame:
     label: "Start at frame number"
@@ -64,5 +66,5 @@ attributes:
 
   end_frame:
     label: "End at frame number"
-    help: "Enter the number of the frame to end at.  Level blank to render to the last frame."
+    help: "Enter the number of the frame to end at.  Leave blank to render to the last frame."
     value: ""

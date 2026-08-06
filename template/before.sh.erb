@@ -1,6 +1,4 @@
-module load modtree/deprecated
-module load blender/4.2.5
-module load cuda/11.7
+module load <%= context.version %>
 
 export OUTPUT_DIR="<%= context.outputdir %>"
 export BLENDER_PROJECT="<%= context.projectfile %>"
