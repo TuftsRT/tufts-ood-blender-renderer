@@ -4,6 +4,7 @@ module load <%= context.version %>
 
 hostname
 pwd
+nvidia-smi
 
 if [ -z "$OUTPUT_DIR" ]; then
   echo "Error: OUTPUT_DIR is empty or unset."

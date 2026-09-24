@@ -1,14 +1,15 @@
 <%
 @partition_filter = :gpu
-_partial_path = File.expand_path('partials/resource_discovery.erb', __dir__)
-_resource_result = ERB.new(File.read(_partial_path)).result(binding)
+_partial_path = '/etc/ood/config/apps/dashboard/batch_connect/partials/resource_discovery.erb'
+ERB.new(File.read(_partial_path)).result(binding)
 
 if (OodSupport::User.new.groups.map(&:name) & ['hpctools', 'blender']).any?
   max_slots = 6
 else
-  max_slots = 2
+  max_slots = 1
 end
 %>
+
 
 ---
 cluster: "pax" #Set to your cluster name
@@ -39,6 +40,7 @@ attributes:
     label: Blender Version
     widget: select
     options:
+      - ["5.2.2", "blender/5.2.2"]
       - ["4.2.5", "modtree/deprecated blender/4.2.5 cuda/11.7"] # Our clusters modules, you probably need to change these for your own cluster, see Readme.md.
 
   bc_num_slots:
