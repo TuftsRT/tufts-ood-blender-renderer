@@ -11,11 +11,14 @@ script:
     - "--time=<%= bc_num_hours %>:00:00"
     - "--partition=<%= partition %>"
     - "--error=output.err"
+    - "--error=output.err"
 <%
   selected_gpu = gpu_type.to_s.strip
-  gres_name = selected_gpu.split('-', 2).first unless selected_gpu.empty? || selected_gpu == 'none'
+  gres_name = selected_gpu.split('-', 2).first unless selected_gpu.empty? || selected_gpu == 'none' || selected_gpu == 'any'
 %>
-<% if gres_name %>
+<% if selected_gpu == 'any' %>
+    - "--gres=gpu:1"
+<% elsif gres_name %>
     - "--gres=gpu:<%= gres_name %>:1"
 <% if selected_gpu.include?('-') %>
     - "--constraint=<%= selected_gpu %>"
