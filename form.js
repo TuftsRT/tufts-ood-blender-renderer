@@ -1,7 +1,6 @@
 function updateGpuAvailabilityWarning() {
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
   if (!gpuTypeSelect) {
-    console.warn('[gpu-warning] update: missing gpu select element');
     return;
   }
 
@@ -30,7 +29,7 @@ function updateGpuAvailabilityWarning() {
   var existingWarning = document.getElementById(warningId);
   
   // Check if the selected GPU type is unavailable
-  var isUnavailable = unavailableMap.hasOwnProperty(selectedGpuType) && selectedGpuType !== 'any' && selectedGpuType !== 'none';
+  var isUnavailable = unavailableMap.hasOwnProperty(selectedGpuType) && selectedGpuType !== 'none' && selectedGpuType !== '';
   
   try {
     console.log('[gpu-warning] update:', {
@@ -92,7 +91,7 @@ function updateGpuAvailabilityWarning() {
       }
     }
   } else {
-    // Hide warning if GPU is available or if 'any' is selected
+    // Hide warning if GPU is available or no GPU is selected.
     if (existingWarning) {
       existingWarning.style.display = 'none';
     }
@@ -102,8 +101,11 @@ function updateGpuAvailabilityWarning() {
 function repopulateGpuTypesForPartition() {
   var partitionSelect = document.getElementById('batch_connect_session_context_partition');
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
-  if (!partitionSelect || !gpuTypeSelect) {
-    console.warn('[gpu] repopulate: missing partition or gpu select element');
+  if (!partitionSelect) {
+    console.warn('[gpu] repopulate: missing partition select element');
+    return;
+  }
+  if (!gpuTypeSelect) {
     return;
   }
 
@@ -124,15 +126,19 @@ function repopulateGpuTypesForPartition() {
     console.error('[gpu] repopulate: failed to parse data-partition-options JSON', e);
     return;
   }
-  // Check if the selected partition has GPU options in the map
-  var partitionHasGpus = map && Object.prototype.hasOwnProperty.call(map, selected);
+  // Check whether the selected partition has at least one concrete GPU option.
+  var partitionOptions = (map && Object.prototype.hasOwnProperty.call(map, selected)) ? map[selected] : [];
+  var partitionHasGpus = partitionOptions.some(function (opt) {
+    var value = Array.isArray(opt) ? opt[1] : opt;
+    return value && value !== 'none' && value !== 'any';
+  });
   var gpuFormGroup = gpuTypeSelect.closest('.mb-3') || gpuTypeSelect.closest('.form-group');
 
   var numGpusInput = document.getElementById('batch_connect_session_context_num_gpus');
   var numGpusFormGroup = numGpusInput ? (numGpusInput.closest('.mb-3') || numGpusInput.closest('.form-group')) : null;
 
   if (!partitionHasGpus) {
-    // Partition has no GPUs — hide the GPU fields and set to 'none'
+    // Partition has no GPUs: hide GPU fields and clear the submitted GPU value.
     try {
       console.log('[gpu] repopulate: partition "' + selected + '" has no GPUs, hiding gpu_type field');
     } catch (_) {}
@@ -143,16 +149,19 @@ function repopulateGpuTypesForPartition() {
     if (numGpusFormGroup) {
       numGpusFormGroup.style.display = 'none';
     }
+    if (numGpusInput) {
+      numGpusInput.value = '';
+    }
 
-    // Clear options and set a 'none' value so cores/memory lookups use the 'none' GPU type
+    // Clear options and submit a blank GPU value for CPU-only jobs.
     while (gpuTypeSelect.firstChild) {
       gpuTypeSelect.removeChild(gpuTypeSelect.firstChild);
     }
-    var noneOpt = document.createElement('option');
-    noneOpt.textContent = 'none';
-    noneOpt.value = 'none';
-    gpuTypeSelect.appendChild(noneOpt);
-    gpuTypeSelect.value = 'none';
+    var blankOpt = document.createElement('option');
+    blankOpt.textContent = '';
+    blankOpt.value = '';
+    gpuTypeSelect.appendChild(blankOpt);
+    gpuTypeSelect.value = '';
     return;
   }
 
@@ -163,9 +172,12 @@ function repopulateGpuTypesForPartition() {
   if (numGpusFormGroup) {
     numGpusFormGroup.style.display = '';
   }
+  if (numGpusInput && !numGpusInput.value) {
+    numGpusInput.value = '1';
+  }
 
   var usedKey = selected;
-  var opts = map[usedKey] || [];
+  var opts = partitionOptions;
   try {
     console.log('[gpu] repopulate: start', {
       selectedPartition: selected,
@@ -206,7 +218,103 @@ function repopulateGpuTypesForPartition() {
   if (!gpuTypeSelect.value && gpuTypeSelect.options.length > 0) {
     gpuTypeSelect.selectedIndex = 0;
   }
-  try { console.log('[gpu] repopulate: final selection', gpuTypeSelect.value || '(none)'); } catch (_) {}
+  try { console.log('[gpu] repopulate: final selection', gpuTypeSelect.value || '(blank)'); } catch (_) {}
+}
+
+function updateNumGpusForPartition() {
+  var partitionSelect = document.getElementById('batch_connect_session_context_partition');
+  var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
+  var numGpusInput = document.getElementById('batch_connect_session_context_num_gpus');
+
+  // Most apps have no num_gpus field; return quietly rather than warning on
+  // every partition/gpu_type change. Only a missing partition select is notable.
+  if (!numGpusInput) {
+    return;
+  }
+  if (!partitionSelect) {
+    console.warn('[num_gpus] update: missing partition input element');
+    return;
+  }
+
+  var selectedPartition = partitionSelect.value;
+  var selectedGpuType = gpuTypeSelect ? gpuTypeSelect.value : 'none';
+  var numGpusFormGroup = numGpusInput.closest('.mb-3') || numGpusInput.closest('.form-group');
+
+  if (!selectedGpuType || selectedGpuType === 'none') {
+    // CPU-only selection (e.g. "None (CPU only)" on a lab GPU partition):
+    // hide the GPU count and submit no value.
+    if (numGpusFormGroup) {
+      numGpusFormGroup.style.display = 'none';
+    }
+    numGpusInput.value = '';
+    return;
+  }
+
+  if (numGpusFormGroup) {
+    numGpusFormGroup.style.display = '';
+  }
+
+  var datasetValue = (numGpusInput.dataset && numGpusInput.dataset.partitionGpuMaxGpus) ? numGpusInput.dataset.partitionGpuMaxGpus : null;
+  var attrValue = datasetValue ? null : numGpusInput.getAttribute('data-partition-gpu-max-gpus');
+  var optionsSource = datasetValue ? 'input-dataset' : (attrValue ? 'input-attribute' : null);
+  var optionsJson = datasetValue || attrValue;
+
+  if (!optionsJson) {
+    console.warn('[num_gpus] update: no data-partition-gpu-max-gpus found');
+    return;
+  }
+
+  var map;
+  try {
+    map = JSON.parse(optionsJson);
+  } catch (e) {
+    console.error('[num_gpus] update: failed to parse data-partition-gpu-max-gpus JSON', e);
+    return;
+  }
+
+  var maxGpus = null;
+  if (map[selectedPartition] && map[selectedPartition][selectedGpuType]) {
+    maxGpus = map[selectedPartition][selectedGpuType];
+  } else if (map[selectedPartition] && map[selectedPartition]['any']) {
+    maxGpus = map[selectedPartition]['any'];
+  } else if (map['all'] && map['all'][selectedGpuType]) {
+    maxGpus = map['all'][selectedGpuType];
+  } else if (map['all'] && map['all']['any']) {
+    maxGpus = map['all']['any'];
+  }
+
+  try {
+    console.log('[num_gpus] update: start', {
+      selectedPartition: selectedPartition,
+      selectedGpuType: selectedGpuType,
+      source: optionsSource,
+      maxGpus: maxGpus
+    });
+  } catch (_) {}
+
+  if (!maxGpus || maxGpus <= 0) {
+    numGpusInput.value = '';
+    console.warn('[num_gpus] update: invalid max GPUs for partition+GPU', selectedPartition, selectedGpuType);
+    return;
+  }
+
+  var currentValue = parseInt(numGpusInput.value, 10) || 1;
+  numGpusInput.setAttribute('max', maxGpus);
+
+  if (currentValue > maxGpus) {
+    numGpusInput.value = maxGpus;
+    try { console.log('[num_gpus] update: adjusted value from', currentValue, 'to', maxGpus); } catch (_) {}
+  } else if (!numGpusInput.value) {
+    numGpusInput.value = '1';
+  }
+
+  var helpText = numGpusInput.parentElement.querySelector('.form-text, .help-block');
+  if (helpText) {
+    helpText.textContent = 'Number of GPUs to allocate on one node. Max varies by partition and GPU type (Maximum: ' + maxGpus + ' GPUs).';
+    try { console.log('[num_gpus] update: updated help text to show', maxGpus, 'GPUs'); } catch (_) {}
+  }
+
+  try { console.log('[num_gpus] update: final max =', maxGpus, ', value =', numGpusInput.value); } catch (_) {}
 }
 
 function updateCoresForPartition() {
@@ -214,13 +322,13 @@ function updateCoresForPartition() {
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
   var coresInput = document.getElementById('batch_connect_session_context_num_cores');
   
-  if (!partitionSelect || !gpuTypeSelect || !coresInput) {
-    console.warn('[cores] update: missing partition, gpu_type, or cores input element');
+  if (!partitionSelect || !coresInput) {
+    console.warn('[cores] update: missing partition or cores input element');
     return;
   }
 
   var selectedPartition = partitionSelect.value;
-  var selectedGpuType = gpuTypeSelect.value;
+  var selectedGpuType = gpuTypeSelect ? gpuTypeSelect.value : 'none';
   
   // Read partition_gpu_max_cores data from the cores input's dataset or attribute
   var datasetValue = (coresInput.dataset && coresInput.dataset.partitionGpuMaxCores) ? coresInput.dataset.partitionGpuMaxCores : null;
@@ -293,13 +401,13 @@ function updateMemoryForPartition() {
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
   var memoryInput = document.getElementById('batch_connect_session_context_num_memory');
   
-  if (!partitionSelect || !gpuTypeSelect || !memoryInput) {
-    console.warn('[memory] update: missing partition, gpu_type, or memory input element');
+  if (!partitionSelect || !memoryInput) {
+    console.warn('[memory] update: missing partition or memory input element');
     return;
   }
 
   var selectedPartition = partitionSelect.value;
-  var selectedGpuType = gpuTypeSelect.value;
+  var selectedGpuType = gpuTypeSelect ? gpuTypeSelect.value : 'none';
   
   // Read partition_gpu_max_memory data from the memory input's dataset or attribute
   var datasetValue = (memoryInput.dataset && memoryInput.dataset.partitionGpuMaxMemory) ? memoryInput.dataset.partitionGpuMaxMemory : null;
@@ -337,8 +445,9 @@ function updateMemoryForPartition() {
     return;
   }
 
-  // Convert MB to GB and round to nearest whole number (no decimals)
-  var maxMemoryGB = Math.round(maxMemoryMB / 1024.0);
+  // Convert MB to GB, flooring so we never advertise more memory than a node
+  // actually has (matches the server-side .floor in resource_discovery.erb).
+  var maxMemoryGB = Math.max(Math.floor(maxMemoryMB / 1024.0), 1);
   
   try {
     console.log('[memory] update: start', {
@@ -443,36 +552,305 @@ function updateHoursForPartition() {
   try { console.log('[hours] update: final max =', maxHours, ', value =', hoursInput.value); } catch (_) {}
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  try { console.log('[gpu] DOMContentLoaded: initializing GPU options, cores, memory, hours, and availability warnings'); } catch (_) {}
+function initializeResourceDiscoveryForm() {
+  if (window.oodResourceDiscoveryInitialized) {
+    return true;
+  }
+
+  try { console.log('[gpu] initializing GPU options, cores, memory, hours, and availability warnings'); } catch (_) {}
+  var partitionSelect = document.getElementById('batch_connect_session_context_partition');
+  if (!partitionSelect) {
+    try { console.warn('[gpu] initialize: partition select not found yet, will retry'); } catch (_) {}
+    return false;
+  }
+
+  window.oodResourceDiscoveryInitialized = true;
+
   repopulateGpuTypesForPartition();
+  updateNumGpusForPartition();
   updateCoresForPartition();
   updateMemoryForPartition();
   updateHoursForPartition();
   updateGpuAvailabilityWarning();
   
-  var partitionSelect = document.getElementById('batch_connect_session_context_partition');
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
   
-  if (partitionSelect) {
-    partitionSelect.addEventListener('change', function () {
-      try { console.log('[partition] change ->', partitionSelect.value); } catch (_) {}
-      repopulateGpuTypesForPartition();
-      updateCoresForPartition();
-      updateMemoryForPartition();
-      updateHoursForPartition();
-      updateGpuAvailabilityWarning();
-    });
-  }
+  partitionSelect.addEventListener('change', function () {
+    try { console.log('[partition] change ->', partitionSelect.value); } catch (_) {}
+    repopulateGpuTypesForPartition();
+    updateNumGpusForPartition();
+    updateCoresForPartition();
+    updateMemoryForPartition();
+    updateHoursForPartition();
+    updateGpuAvailabilityWarning();
+  });
   
   if (gpuTypeSelect) {
     gpuTypeSelect.addEventListener('change', function () {
       try { console.log('[gpu_type] change ->', gpuTypeSelect.value); } catch (_) {}
+      updateNumGpusForPartition();
       updateCoresForPartition();
       updateMemoryForPartition();
       updateGpuAvailabilityWarning();
     });
   }
-});
 
+  return true;
+}
 
+function initializeResourceDiscoveryFormWhenReady() {
+  if (initializeResourceDiscoveryForm()) {
+    return;
+  }
+
+  setTimeout(initializeResourceDiscoveryForm, 250);
+  setTimeout(initializeResourceDiscoveryForm, 1000);
+
+  if (window.MutationObserver) {
+    var observer = new MutationObserver(function () {
+      if (initializeResourceDiscoveryForm()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeResourceDiscoveryFormWhenReady);
+} else {
+  initializeResourceDiscoveryFormWhenReady();
+}
+
+// ---------------------------------------------------------------------------
+// Interactive QOS caps
+//
+// When the "Request priority start" checkbox (ta_qos) is checked, the job is
+// submitted with --qos=interactive, which Slurm limits to a 4 hour walltime
+// and, per user, 16 CPU cores, 64 GB of memory, and 1 GPU. Cap the matching
+// form fields while the box is checked, and restore the partition-based
+// limits when it is unchecked.
+// ---------------------------------------------------------------------------
+(function () {
+  'use strict';
+
+  var QOS_LIMITS = {
+    bc_num_hours: 4,
+    num_cores: 16,
+    num_memory: 64,
+    num_gpus: 1
+  };
+  var ID_PREFIX = 'batch_connect_session_context_';
+  var WARNING_ID = 'interactive-qos-limits-warning';
+
+  function qosCheckbox() {
+    return document.getElementById(ID_PREFIX + 'ta_qos');
+  }
+
+  function interactiveChecked() {
+    var box = qosCheckbox();
+    return !!(box && box.checked);
+  }
+
+  function limitedInputs() {
+    return Object.keys(QOS_LIMITS).reduce(function (found, name) {
+      var input = document.getElementById(ID_PREFIX + name);
+      if (input) {
+        found.push({ input: input, limit: QOS_LIMITS[name] });
+      }
+      return found;
+    }, []);
+  }
+
+  function capInput(input, limit) {
+    var currentMax = parseInt(input.getAttribute('max'), 10);
+    if (isNaN(currentMax)) {
+      // The form set no max at all: remember that ours is artificial so
+      // unchecking the box removes it again.
+      input.dataset.qosAddedMax = '1';
+      input.setAttribute('max', String(limit));
+    } else if (currentMax > limit) {
+      // Remember the partition/system max so unchecking can restore it.
+      input.dataset.qosSavedMax = String(currentMax);
+      input.setAttribute('max', String(limit));
+    }
+    var cap = Math.min(isNaN(currentMax) ? limit : currentMax, limit);
+    var value = parseFloat(input.value);
+    if (!isNaN(value) && value > cap) {
+      input.value = String(cap);
+      try { console.log('[qos] capped', input.id, 'to', cap); } catch (_) {}
+    }
+  }
+
+  function uncapInput(input) {
+    if (input.dataset.qosSavedMax) {
+      input.setAttribute('max', input.dataset.qosSavedMax);
+    } else if (input.dataset.qosAddedMax) {
+      input.removeAttribute('max');
+    }
+    delete input.dataset.qosSavedMax;
+    delete input.dataset.qosAddedMax;
+  }
+
+  function updateWarning(show) {
+    var box = qosCheckbox();
+    var warning = document.getElementById(WARNING_ID);
+    if (!show) {
+      if (warning) {
+        warning.style.display = 'none';
+      }
+      return;
+    }
+    if (!warning) {
+      warning = document.createElement('div');
+      warning.id = WARNING_ID;
+      warning.className = 'alert alert-info';
+      warning.setAttribute('role', 'alert');
+      warning.style.marginTop = '10px';
+      var strong = document.createElement('strong');
+      strong.textContent = 'Interactive QOS limits applied: ';
+      warning.appendChild(strong);
+      warning.appendChild(document.createTextNode(
+        'walltime is capped at 4 hours and resources at 16 CPU cores, ' +
+        '64 GB of memory, and 1 GPU per user, and only 1 interactive job ' +
+        'may run at a time. Uncheck the box to remove these caps.'
+      ));
+      var formGroup = box.closest('.mb-3') || box.closest('.form-group');
+      if (formGroup && formGroup.parentNode) {
+        formGroup.parentNode.insertBefore(warning, formGroup.nextSibling);
+      }
+    }
+    warning.style.display = 'block';
+  }
+
+  // Partitions where "Request priority start" applies, from the partition
+  // select's data-interactive-qos-partitions (set by resource_discovery.erb).
+  // null means no data: leave the checkbox alone.
+  function interactiveQosPartitions() {
+    var partitionSelect = document.getElementById(ID_PREFIX + 'partition');
+    if (!partitionSelect) {
+      return null;
+    }
+    var json = (partitionSelect.dataset && partitionSelect.dataset.interactiveQosPartitions) ||
+      partitionSelect.getAttribute('data-interactive-qos-partitions');
+    if (!json) {
+      return null;
+    }
+    try {
+      return JSON.parse(json);
+    } catch (e) {
+      console.error('[qos] failed to parse data-interactive-qos-partitions JSON', e);
+      return null;
+    }
+  }
+
+  // Hide and uncheck "Request priority start" on partitions where
+  // --qos=interactive does not apply (preempt, blackwell, lab partitions);
+  // their jobs are submitted with the partition's own QOS instead.
+  function updateQosAvailability() {
+    var box = qosCheckbox();
+    var allowed = interactiveQosPartitions();
+    var partitionSelect = document.getElementById(ID_PREFIX + 'partition');
+    if (!box || !allowed || !partitionSelect) {
+      return;
+    }
+    var available = allowed.indexOf(partitionSelect.value) !== -1;
+    var formGroup = box.closest('.mb-3') || box.closest('.form-group') || box.closest('.form-check');
+    if (formGroup) {
+      formGroup.style.display = available ? '' : 'none';
+    }
+    if (!available && box.checked) {
+      box.checked = false;
+      applyQosLimits();
+    }
+    try { console.log('[qos] priority start', available ? 'available' : 'hidden', 'for', partitionSelect.value); } catch (_) {}
+  }
+
+  function applyQosLimits() {
+    var checked = interactiveChecked();
+    limitedInputs().forEach(function (entry) {
+      if (checked) {
+        capInput(entry.input, entry.limit);
+      } else {
+        uncapInput(entry.input);
+      }
+    });
+    updateWarning(checked);
+    // The resource-discovery handlers rewrite max and help text on partition
+    // or GPU changes; re-running them after an uncheck restores the exact
+    // partition-based limits and help text.
+    if (!checked) {
+      ['updateCoresForPartition', 'updateMemoryForPartition',
+       'updateHoursForPartition', 'updateNumGpusForPartition'].forEach(function (fn) {
+        if (typeof window[fn] === 'function') {
+          try { window[fn](); } catch (_) {}
+        }
+      });
+    }
+  }
+
+  function initializeQosLimits() {
+    if (window.oodInteractiveQosInitialized) {
+      return true;
+    }
+    var box = qosCheckbox();
+    if (!box) {
+      return false;
+    }
+    window.oodInteractiveQosInitialized = true;
+
+    box.addEventListener('change', applyQosLimits);
+
+    var partitionSelect = document.getElementById(ID_PREFIX + 'partition');
+    if (partitionSelect) {
+      partitionSelect.addEventListener('change', updateQosAvailability);
+    }
+
+    // The resource-discovery handlers overwrite max on partition/GPU changes;
+    // watch the max attributes and re-apply the cap while the box is checked.
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function (mutations) {
+        if (!interactiveChecked()) {
+          return;
+        }
+        mutations.forEach(function (mutation) {
+          var input = mutation.target;
+          var limit = QOS_LIMITS[input.id.replace(ID_PREFIX, '')];
+          if (limit && parseInt(input.getAttribute('max'), 10) > limit) {
+            capInput(input, limit);
+          }
+        });
+      });
+      limitedInputs().forEach(function (entry) {
+        observer.observe(entry.input, { attributes: true, attributeFilter: ['max'] });
+      });
+    }
+
+    updateQosAvailability();
+    applyQosLimits();
+    try { console.log('[qos] interactive QOS limits initialized'); } catch (_) {}
+    return true;
+  }
+
+  function initializeQosLimitsWhenReady() {
+    if (initializeQosLimits()) {
+      return;
+    }
+    setTimeout(initializeQosLimits, 250);
+    setTimeout(initializeQosLimits, 1000);
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function () {
+        if (initializeQosLimits()) {
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeQosLimitsWhenReady);
+  } else {
+    initializeQosLimitsWhenReady();
+  }
+})();

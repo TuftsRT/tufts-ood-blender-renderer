@@ -24,3 +24,12 @@ script:
     - "--constraint=<%= selected_gpu %>"
 <% end %>
 <% end %>
+<%-
+  # QOS rules live in the shared partition_qos.rb (preempt -> preempt,
+  # lab partitions -> normal-contrib, interactive only where allowed).
+  load '/etc/ood/config/apps/dashboard/batch_connect/partials/partition_qos.rb'
+  qos = PartitionQos.qos_for(partition, (ta_qos if defined?(ta_qos)))
+-%>
+<%- if qos -%>
+    - "--qos=<%= qos %>"
+<%- end -%>
